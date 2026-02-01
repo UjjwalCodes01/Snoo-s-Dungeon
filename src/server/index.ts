@@ -1,7 +1,10 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
+import { InitResponse, IncrementResponse, DecrementResponse, DailyDungeonResponse, SubmitScoreRequest, SubmitScoreResponse, LeaderboardResponse, GhostsResponse } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
+import { DungeonStorage } from './core/storage';
+import { CommentParser } from './core/parser';
+import { AdminHelper } from './core/admin';
 
 const app = express();
 
@@ -13,6 +16,243 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
 
 const router = express.Router();
+
+// Dungeon API Endpoints
+
+// Get today's dungeon layout, monster, and modifier
+router.get('/api/daily-dungeon', async (_req, res) => {
+  try {
+    const storage = new DungeonStorage(redis);
+    const dungeon = await storage.getDailyDungeon();
+    
+    const response: DailyDungeonResponse = {
+      layout: dungeon.layout,
+      monster: dungeon.monster,
+      modifier: dungeon.modifier,
+      date: storage.getTodayKey()
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Failed to fetch daily dungeon:', error);
+    res.status(500).json({ error: 'Failed to fetch dungeon data' });
+  }
+});
+
+// Submit player score and optional ghost position
+router.post('/api/submit-score', async (req, res) => {
+  try {
+    const { score, deathPosition } = req.body as SubmitScoreRequest;
+    const username = context.username || 'Anonymous';
+    
+    const storage = new DungeonStorage(redis);
+    
+    // Submit score to leaderboard
+    await storage.submitScore(username, score);
+    
+    // Add ghost if player died
+    if (deathPosition) {
+      await storage.addGhost({
+        x: deathPosition.x,
+        y: deathPosition.y,
+        username
+      });
+    }
+    
+    // Get player's rank
+    const rank = await storage.getUserRank(username);
+    
+    const response: SubmitScoreResponse = {
+      success: true,
+      rank,
+      score
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Failed to submit score:', error);
+    res.status(500).json({ success: false, error: 'Failed to submit score' });
+  }
+});
+
+// Get leaderboard with user's rank
+router.get('/api/leaderboard', async (_req, res) => {
+  try {
+    const username = context.username || '';
+    const storage = new DungeonStorage(redis);
+    
+    const topPlayers = await storage.getLeaderboard(10);
+    const userRank = username ? await storage.getUserRank(username) : null;
+    const totalPlayers = await storage.getTotalPlayers();
+    
+    const response: LeaderboardResponse = {
+      topPlayers,
+      userRank,
+      totalPlayers
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Failed to fetch leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// Get ghost death positions for today's dungeon
+router.get('/api/ghosts', async (_req, res) => {
+  try {
+    const storage = new DungeonStorage(redis);
+    const ghosts = await storage.getGhosts();
+    
+    const response: GhostsResponse = {
+      ghosts
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Failed to fetch ghosts:', error);
+    res.status(500).json({ error: 'Failed to fetch ghosts' });
+  }
+});
+
+// Scheduler endpoint: Generate tomorrow's dungeon from top-voted comment
+router.post('/internal/scheduler/generate-daily', async (_req, res) => {
+  try {
+    const parser = new CommentParser(reddit);
+    const storage = new DungeonStorage(redis);
+    
+    // Configuration: Replace with actual submission post ID
+    // This should be set via environment variable or Redis config
+    const submissionPostId = await redis.get('config:submission_post_id');
+    
+    if (!submissionPostId) {
+      console.warn('No submission post configured, using default dungeon');
+      res.json({ success: true, message: 'No submission post configured' });
+      return;
+    }
+    
+    // Get top-voted dungeon submission
+    const topSubmission = await parser.getTopSubmission(submissionPostId);
+    
+    if (topSubmission) {
+      await storage.saveDailyDungeon(topSubmission);
+      console.log(`Generated new daily dungeon: ${topSubmission.monster} with ${topSubmission.modifier}`);
+      res.json({ 
+        success: true, 
+        dungeon: {
+          monster: topSubmission.monster,
+          modifier: topSubmission.modifier,
+          author: topSubmission.author
+        }
+      });
+    } else {
+      console.warn('No valid submissions found, keeping current dungeon');
+      res.json({ success: true, message: 'No valid submissions found' });
+    }
+  } catch (error) {
+    console.error('Failed to generate daily dungeon:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate dungeon' });
+  }
+});
+
+// Admin endpoints (moderator only)
+
+// Set submission post ID for daily dungeon generation
+router.post('/admin/set-submission-post', async (req, res) => {
+  try {
+    // Check if user is moderator (basic security)
+    const isModerator = context.userType === 'moderator';
+    
+    if (!isModerator) {
+      res.status(403).json({ error: 'Moderator access required' });
+      return;
+    }
+    
+    const { postId } = req.body;
+    
+    if (!postId || typeof postId !== 'string') {
+      res.status(400).json({ error: 'Invalid postId' });
+      return;
+    }
+    
+    const admin = new AdminHelper(redis);
+    await admin.setSubmissionPostId(postId);
+    
+    res.json({ 
+      success: true, 
+      message: `Submission post set to: ${postId}` 
+    });
+  } catch (error) {
+    console.error('Failed to set submission post:', error);
+    res.status(500).json({ error: 'Failed to set submission post' });
+  }
+});
+
+// Get current submission post ID
+router.get('/admin/submission-post', async (_req, res) => {
+  try {
+    const admin = new AdminHelper(redis);
+    const postId = await admin.getSubmissionPostId();
+    
+    res.json({ 
+      postId,
+      configured: !!postId
+    });
+  } catch (error) {
+    console.error('Failed to get submission post:', error);
+    res.status(500).json({ error: 'Failed to get submission post' });
+  }
+});
+
+// Manually trigger dungeon generation (for testing)
+router.post('/admin/trigger-generation', async (_req, res) => {
+  try {
+    const isModerator = context.userType === 'moderator';
+    
+    if (!isModerator) {
+      res.status(403).json({ error: 'Moderator access required' });
+      return;
+    }
+    
+    const parser = new CommentParser(reddit);
+    const storage = new DungeonStorage(redis);
+    const admin = new AdminHelper(redis);
+    
+    const postId = await admin.getSubmissionPostId();
+    
+    if (!postId) {
+      res.status(400).json({ 
+        error: 'No submission post configured. Use /admin/set-submission-post first.' 
+      });
+      return;
+    }
+    
+    const topSubmission = await parser.getTopSubmission(postId);
+    
+    if (topSubmission) {
+      await storage.saveDailyDungeon(topSubmission);
+      res.json({ 
+        success: true, 
+        message: 'Dungeon generated successfully',
+        dungeon: {
+          monster: topSubmission.monster,
+          modifier: topSubmission.modifier,
+          author: topSubmission.author
+        }
+      });
+    } else {
+      res.json({ 
+        success: false, 
+        message: 'No valid submissions found' 
+      });
+    }
+  } catch (error) {
+    console.error('Failed to trigger generation:', error);
+    res.status(500).json({ error: 'Failed to trigger generation' });
+  }
+});
+
+// Existing counter endpoints
 
 router.get<{ postId: string }, InitResponse | { status: string; message: string }>(
   '/api/init',
@@ -126,21 +366,15 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
 
 router.get('/api/daily-content', async (_req, res): Promise<void> => {
   try {
-    // Hardcoded submission post ID for daily content (replace with actual)
-    const submissionPostId = 't3_1b8b8x0'; // Example, update to real post ID
-    const commentsListing = await reddit.getComments({ postId: submissionPostId });
-    const comments = await commentsListing.all();
-    
-    // Parse top comment for layout, monster, modifier
-    const topComment = comments[0]?.body || '';
-    const layoutMatch = topComment.match(/Layout:\s*(\d+)/);
-    const monsterMatch = topComment.match(/Monster:\s*(\w+)/);
-    const modifierMatch = topComment.match(/Modifier:\s*(.+)/);
+    // Use the same endpoint as /api/daily-dungeon for consistency
+    const storage = new DungeonStorage(redis);
+    const dungeon = await storage.getDailyDungeon();
     
     res.json({
-      layout: layoutMatch ? layoutMatch[1] : '0101010101',
-      monster: monsterMatch ? monsterMatch[1] : 'Goblin',
-      modifier: modifierMatch && modifierMatch[1] ? modifierMatch[1].trim() : 'None',
+      layout: dungeon.layout,
+      monster: dungeon.monster,
+      modifier: dungeon.modifier,
+      date: storage.getTodayKey()
     });
   } catch (error) {
     console.error('Error fetching daily content:', error);

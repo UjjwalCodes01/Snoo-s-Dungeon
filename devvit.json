@@ -1,6 +1,6 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
-  "name": "snoos-dungeon",
+  "name": "snoo-dungeon",
   "post": {
     "dir": "dist/client",
     "entrypoints": {
@@ -33,6 +33,17 @@
   },
   "triggers": {
     "onAppInstall": "/internal/on-app-install"
+  },
+  "scheduler": {
+    "tasks": {
+      "generate-daily": {
+        "endpoint": "/internal/scheduler/generate-daily",
+        "cron": "0 0 * * *"
+      }
+    }
+  },
+  "permissions": {
+    "redis": true
   },
   "dev": {
     "subreddit": "snoos_dungeon_dev"
