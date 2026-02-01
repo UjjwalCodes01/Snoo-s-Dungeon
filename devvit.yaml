@@ -1,0 +1,33 @@
+$schema: https://developers.reddit.com/schema/config-file.v1.json
+name: snoo-dungeon
+post:
+  dir: dist/client
+  entrypoints:
+    default:
+      inline: true
+      entry: splash.html
+    game:
+      entry: game.html
+server:
+  dir: dist/server
+  entry: index.cjs
+media:
+  dir: assets
+menu:
+  items:
+    - label: Create a new post
+      description: snoos-dungeon
+      location: subreddit
+      forUserType: moderator
+      endpoint: /internal/menu/post-create
+triggers:
+  onAppInstall: /internal/on-app-install
+scheduler:
+  tasks:
+    generate-daily:
+      endpoint: /internal/scheduler/generate-daily
+      cron: '0 0 * * *'
+permissions:
+  redis: true
+dev:
+  subreddit: snoos_dungeon_dev

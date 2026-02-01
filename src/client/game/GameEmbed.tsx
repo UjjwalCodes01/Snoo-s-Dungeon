@@ -87,7 +87,7 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
     'Slime': { hp: 60, dmg: 5, speed: 'Slow' },
     'Dragon': { hp: 150, dmg: 20, speed: 'Medium' },
   };
-  const stats = monsterStats[monster] || monsterStats['Goblin'];
+  const stats = monsterStats[monster] || { hp: 25, dmg: 8, speed: 'Fast' };
 
   // Modifier descriptions
   const modifierDesc: Record<string, string> = {
