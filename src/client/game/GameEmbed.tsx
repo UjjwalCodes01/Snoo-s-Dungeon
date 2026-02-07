@@ -66,51 +66,31 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
 
   // Start the Phaser game when user clicks Play
   const startGame = () => {
+    console.log('Starting game with:', { layout, monster, modifier });
     setShowPreview(false);
     
     // Use setTimeout to ensure the container div is visible and in the DOM
     setTimeout(() => {
       if (gameInstanceRef.current) {
-        // Already created, just show it
+        console.log('Game already exists, restarting scene');
+        // Game already exists, restart it with new data
+        gameInstanceRef.current.scene.start('GameScene', {
+          layout,
+          monster,
+          modifier,
+          onGameOver: handleGameOver,
+          onVictory: handleVictory,
+        });
         return;
       }
       
       const container = document.getElementById('phaser-game-container');
       if (!container) {
-        console.error('Game container not found');
+        console.error('Game container not found!');
         return;
       }
 
-      const handleGameOver = async (score: number, deathX: number, deathY: number) => {
-        try {
-          await fetch('/api/submit-score', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              score,
-              deathPosition: { x: deathX, y: deathY },
-              survived: false,
-            }),
-          });
-        } catch (err) {
-          console.error('Failed to submit score:', err);
-        }
-      };
-
-      const handleVictory = async (score: number) => {
-        try {
-          await fetch('/api/submit-score', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              score,
-              survived: true,
-            }),
-          });
-        } catch (err) {
-          console.error('Failed to submit score:', err);
-        }
-      };
+      console.log('Creating new Phaser game instance');
 
       const game = createGame('phaser-game-container', {
         layout,
@@ -121,7 +101,41 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
       });
 
       gameInstanceRef.current = game;
-    }, 50);
+      console.log('Phaser game created successfully');
+    }, 100);
+  };
+
+  const handleGameOver = async (score: number, deathX: number, deathY: number) => {
+    console.log('Game Over! Score:', score, 'Death position:', { x: deathX, y: deathY });
+    try {
+      await fetch('/api/submit-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          score,
+          deathPosition: { x: deathX, y: deathY },
+          survived: false,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to submit score:', err);
+    }
+  };
+
+  const handleVictory = async (score: number) => {
+    console.log('Victory! Score:', score);
+    try {
+      await fetch('/api/submit-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          score,
+          survived: true,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to submit score:', err);
+    }
   };
 
   // Cleanup on unmount

@@ -40,7 +40,7 @@ export const useDailyContent = () => {
         layout: data.layout || DEFAULT_LAYOUT,
         monster: data.monster || 'Goblin',
         modifier: data.modifier || 'Normal',
-        date: data.date || new Date().toISOString().split('T')[0] || '',
+        date: data.createdAt ? new Date(data.createdAt).toISOString().split('T')[0] || '' : new Date().toISOString().split('T')[0] || '',
         loading: false,
         error: null,
       });
