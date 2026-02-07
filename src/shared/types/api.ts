@@ -1,5 +1,8 @@
 import { DungeonLayout, PlayerScore, LeaderboardEntry, GhostPosition } from './dungeon';
 
+// Re-export types needed by client
+export type { LeaderboardEntry, GhostPosition };
+
 export type InitResponse = {
   type: 'init';
   postId: string;

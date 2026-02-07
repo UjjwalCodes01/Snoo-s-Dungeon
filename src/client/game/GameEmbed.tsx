@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createGame } from '../phaser';
+import type Phaser from 'phaser';
 
 interface GameEmbedProps {
   layout: string;
@@ -47,20 +49,10 @@ const Tile = ({ isWall, isStart, isEnd, hasMonster, delay }: {
   );
 };
 
-// Stats bar component
-const StatBar = ({ icon, label, value, color }: { icon: string; label: string; value: string; color: string }) => (
-  <div className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2">
-    <span className="text-2xl">{icon}</span>
-    <div className="flex-1">
-      <p className="text-xs text-gray-500 uppercase">{label}</p>
-      <p className={`font-bold ${color}`}>{value}</p>
-    </div>
-  </div>
-);
-
 export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
-  const gameUrl = ''; // Set this after GameMaker export
-  const [isHovering, setIsHovering] = useState(false);
+  const gameContainerRef = useRef<HTMLDivElement>(null);
+  const gameInstanceRef = useRef<Phaser.Game | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
   const [pulseMonster, setPulseMonster] = useState(false);
 
   // Pulse monster periodically
@@ -70,6 +62,76 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
       setTimeout(() => setPulseMonster(false), 500);
     }, 3000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Start the Phaser game when user clicks Play
+  const startGame = () => {
+    setShowPreview(false);
+    
+    // Use setTimeout to ensure the container div is visible and in the DOM
+    setTimeout(() => {
+      if (gameInstanceRef.current) {
+        // Already created, just show it
+        return;
+      }
+      
+      const container = document.getElementById('phaser-game-container');
+      if (!container) {
+        console.error('Game container not found');
+        return;
+      }
+
+      const handleGameOver = async (score: number, deathX: number, deathY: number) => {
+        try {
+          await fetch('/api/submit-score', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              score,
+              deathPosition: { x: deathX, y: deathY },
+              survived: false,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to submit score:', err);
+        }
+      };
+
+      const handleVictory = async (score: number) => {
+        try {
+          await fetch('/api/submit-score', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              score,
+              survived: true,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to submit score:', err);
+        }
+      };
+
+      const game = createGame('phaser-game-container', {
+        layout,
+        monster,
+        modifier,
+        onGameOver: handleGameOver,
+        onVictory: handleVictory,
+      });
+
+      gameInstanceRef.current = game;
+    }, 50);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (gameInstanceRef.current) {
+        gameInstanceRef.current.destroy(true);
+        gameInstanceRef.current = null;
+      }
+    };
   }, []);
 
   // Parse layout string to 10x10 grid
@@ -87,7 +149,7 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
     'Slime': { hp: 60, dmg: 5, speed: 'Slow' },
     'Dragon': { hp: 150, dmg: 20, speed: 'Medium' },
   };
-  const stats = monsterStats[monster] || monsterStats['Goblin'];
+  const stats = monsterStats[monster] || monsterStats['Goblin']!;
 
   // Modifier descriptions
   const modifierDesc: Record<string, string> = {
@@ -99,37 +161,86 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
     'Regeneration': 'Slow HP recovery',
   };
 
-  if (!gameUrl) {
+  if (!showPreview) {
     return (
-      <div 
-        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl overflow-hidden shadow-2xl border border-gray-700/50 relative"
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => setIsHovering(false)}
-      >
-        {/* Glow effect */}
-        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-transparent to-purple-500/10 opacity-50" />
-        
-        {/* Header */}
-        <div className="relative bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 p-5">
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml,...')] opacity-10" />
-          <div className="relative z-10">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-black text-white flex items-center gap-2">
-                  <span className="text-3xl">🎮</span> Today's Dungeon
-                </h2>
-                <p className="text-orange-100 text-sm mt-1">
-                  Can you survive?
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 bg-white/20 rounded-full text-sm text-white backdrop-blur-sm">
-                  10×10 Grid
-                </span>
-              </div>
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl overflow-hidden shadow-2xl border border-gray-700/50">
+        <div className="bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <span>🎮</span> Conquer the Dungeon
+            </h2>
+            <div className="flex items-center gap-3">
+              <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-sm flex items-center gap-1">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                Playing
+              </span>
+              <button
+                onClick={() => setShowPreview(true)}
+                className="px-3 py-1 bg-white/20 text-white rounded-lg text-sm hover:bg-white/30 transition-colors"
+              >
+                Show Info
+              </button>
             </div>
           </div>
         </div>
+        <div className="bg-gray-900">
+          <div id="phaser-game-container" ref={gameContainerRef} className="w-full" style={{ minHeight: '640px' }}></div>
+        </div>
+        <div className="p-3 bg-gray-900 border-t border-gray-700/50">
+          <div className="flex justify-center gap-6 text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-400">WASD</kbd>
+              <span>Move</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-400">Space</kbd>
+              <span>Attack</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-400">R</kbd>
+              <span>Restart</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show preview by default or when button clicked
+  return (
+    <div 
+      className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl overflow-hidden shadow-2xl border border-gray-700/50 relative"
+    >
+      {/* Glow effect */}
+      <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-transparent to-purple-500/10 opacity-50" />
+      
+      {/* Header */}
+      <div className="relative bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 p-5">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,...')] opacity-10" />
+        <div className="relative z-10">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-black text-white flex items-center gap-2">
+                <span className="text-3xl">🎮</span> Today's Dungeon
+              </h2>
+              <p className="text-orange-100 text-sm mt-1">
+                Can you survive?
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 bg-white/20 rounded-full text-sm text-white backdrop-blur-sm">
+                10×10 Grid
+              </span>
+              <button
+                onClick={startGame}
+                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition-all transform hover:scale-105 shadow-lg"
+              >
+                ▶ Play Now
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
         
         {/* Dungeon Grid Preview */}
         <div className="p-6 bg-gray-900 relative">
@@ -217,16 +328,19 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
           </div>
         </div>
 
-        {/* Play Button / Coming Soon */}
-        <div className="p-5 bg-gradient-to-r from-orange-600 via-red-600 to-pink-600 relative overflow-hidden">
-          <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-[shimmer_3s_infinite]" />
-          <div className="relative z-10 text-center">
-            <p className="font-black text-white text-xl mb-1">🎮 Game Coming Soon!</p>
-            <p className="text-orange-100 text-sm">
-              The dungeon crawler is being forged in GameMaker...
-            </p>
+        {/* Play Button */}
+        <div className="p-5 bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 relative overflow-hidden cursor-pointer hover:brightness-110 transition-all">
+            <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-[shimmer_3s_infinite]" />
+            <button
+              onClick={startGame}
+              className="relative z-10 w-full text-center"
+            >
+              <p className="font-black text-white text-2xl mb-1">▶ PLAY NOW!</p>
+              <p className="text-green-100 text-sm">
+                Powered by Phaser 3 • Click to start
+              </p>
+            </button>
           </div>
-        </div>
 
         {/* Controls Hint */}
         <div className="p-3 bg-gray-900 border-t border-gray-700/50">
@@ -255,45 +369,4 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
         `}</style>
       </div>
     );
-  }
-
-  // Real game iframe (once GameMaker is hosted)
-  const fullUrl = `${gameUrl}?layout=${encodeURIComponent(layout)}&monster=${encodeURIComponent(monster)}&modifier=${encodeURIComponent(modifier)}`;
-
-  return (
-    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl overflow-hidden shadow-2xl border border-gray-700/50">
-      <div className="bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <span>🎮</span> Conquer the Dungeon
-          </h2>
-          <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-sm flex items-center gap-1">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            Live
-          </span>
-        </div>
-      </div>
-      <div className="relative bg-gray-900" style={{ paddingBottom: '75%' }}>
-        <iframe 
-          src={fullUrl} 
-          title="Snoo's Dungeon Game"
-          className="absolute inset-0 w-full h-full"
-          style={{ border: 'none' }}
-          allow="fullscreen"
-        />
-      </div>
-      <div className="p-3 bg-gray-900 border-t border-gray-700/50">
-        <div className="flex justify-center gap-6 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-400">WASD</kbd>
-            <span>Move</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-400">Space</kbd>
-            <span>Attack</span>
-          </span>
-        </div>
-      </div>
-    </div>
-  );
 }

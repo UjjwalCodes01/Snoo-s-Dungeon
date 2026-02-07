@@ -163,7 +163,7 @@ export const Splash = () => {
 
         {/* Subtitle with typing effect feel */}
         <p className="text-lg text-center text-gray-300 mb-1">
-          Welcome, <span className="font-bold text-transparent bg-gradient-to-r from-orange-400 to-pink-500 bg-clip-text">{context.username ?? 'adventurer'}</span>!
+          Welcome, <span className="font-bold text-transparent bg-gradient-to-r from-orange-400 to-pink-500 bg-clip-text">{context?.username ?? 'adventurer'}</span>!
         </p>
         
         {/* Tagline */}
@@ -193,7 +193,14 @@ export const Splash = () => {
           }}
           onMouseEnter={() => setButtonHover(true)}
           onMouseLeave={() => setButtonHover(false)}
-          onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
+          onClick={(e) => {
+            try {
+              requestExpandedMode(e.nativeEvent, 'game');
+            } catch (err) {
+              // For local testing, navigate to game.html
+              window.location.href = '/game.html';
+            }
+          }}
         >
           {/* Button glow effect */}
           <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-orange-400 to-pink-500 opacity-0 group-hover:opacity-20 blur-xl transition-opacity" />
