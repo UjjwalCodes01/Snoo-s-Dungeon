@@ -430,12 +430,6 @@ export class GameScene extends Phaser.Scene {
     const isMoving = velocityX !== 0 || velocityY !== 0;
     
     if (isMoving) {
-      // Play walk animation if not already playing or attacking
-      if (this.player.anims.currentAnim?.key !== 'soldier-walk-anim' && 
-          this.player.anims.currentAnim?.key !== 'soldier-attack-anim') {
-        this.player.play('soldier-walk-anim', true);
-      }
-      
       // Flip sprite based on direction
       if (velocityX < 0) {
         this.player.setFlipX(true);
@@ -443,8 +437,16 @@ export class GameScene extends Phaser.Scene {
         this.player.setFlipX(false);
       }
       
-      // Add dust trail particles when moving
-      if (Math.random() < 0.1) {
+      // Only play walk if not in attack/hurt animation (priority system)
+      const currentAnim = this.player.anims.currentAnim?.key;
+      const isHighPriority = currentAnim === 'soldier-attack-anim' || currentAnim === 'soldier-hurt-anim' || currentAnim === 'soldier-death-anim';
+      
+      if (!isHighPriority && currentAnim !== 'soldier-walk-anim') {
+        this.player.play('soldier-walk-anim', true);
+      }
+      
+      // Add dust trail particles when moving (reduced frequency)
+      if (Math.random() < 0.05) {
         const dust = this.add.circle(this.player.x, this.player.y + 30, 3, 0x8b7355, 0.5);
         dust.setDepth(4);
         this.tweens.add({
@@ -456,9 +458,11 @@ export class GameScene extends Phaser.Scene {
         });
       }
     } else {
-      // Play idle animation if not attacking
-      if (this.player.anims.currentAnim?.key !== 'soldier-idle-anim' && 
-          this.player.anims.currentAnim?.key !== 'soldier-attack-anim') {
+      // Only play idle if not in attack/hurt animation (priority system)
+      const currentAnim = this.player.anims.currentAnim?.key;
+      const isHighPriority = currentAnim === 'soldier-attack-anim' || currentAnim === 'soldier-hurt-anim' || currentAnim === 'soldier-death-anim';
+      
+      if (!isHighPriority && currentAnim !== 'soldier-idle-anim') {
         this.player.play('soldier-idle-anim', true);
       }
     }
@@ -556,6 +560,9 @@ export class GameScene extends Phaser.Scene {
               const damage = enemy.getData('damage') || 5;
               this.playerHP -= damage;
               
+              // Clamp HP to minimum 0 (prevent negative HP)
+              if (this.playerHP < 0) this.playerHP = 0;
+              
               // Show damage text
               const damageText = this.add.text(this.player.x, this.player.y - 40, `-${damage}`, {
                 fontSize: '24px',
@@ -607,25 +614,25 @@ export class GameScene extends Phaser.Scene {
         }
       }
       
-      // Draw health bar above enemy
-      if (enemy.getData('healthBar')) {
-        enemy.getData('healthBar').destroy();
-        enemy.getData('healthBarBg').destroy();
-      }
-      
+      // Update health bar position and width (DON'T recreate every frame!)
       const hp = enemy.getData('hp') || 0;
       const maxHp = enemy.getData('maxHp') || 1;
       const hpPercent = hp / maxHp;
       
-      // Background bar
-      const bgBar = this.add.rectangle(enemy.x, enemy.y - 40, 32, 4, 0x000000, 0.5);
-      bgBar.setDepth(10);
-      enemy.setData('healthBarBg', bgBar);
+      const bgBar = enemy.getData('healthBarBg');
+      const hpBar = enemy.getData('healthBar');
       
-      // HP bar
-      const hpBar = this.add.rectangle(enemy.x - 16 + (32 * hpPercent / 2), enemy.y - 40, 32 * hpPercent, 4, hpPercent > 0.5 ? 0x22c55e : hpPercent > 0.25 ? 0xf59e0b : 0xef4444);
-      hpBar.setDepth(11);
-      enemy.setData('healthBar', hpBar);
+      if (bgBar && hpBar) {
+        // Just update position
+        bgBar.setPosition(enemy.x, enemy.y - 50);
+        const hpWidth = 32 * hpPercent;
+        hpBar.setPosition(enemy.x - 16 + (hpWidth / 2), enemy.y - 50);
+        hpBar.width = hpWidth;
+        
+        // Update color based on HP
+        const color = hpPercent > 0.5 ? 0x22c55e : hpPercent > 0.25 ? 0xf59e0b : 0xef4444;
+        hpBar.setFillStyle(color);
+      }
     });
     
     // Update UI
@@ -641,7 +648,22 @@ export class GameScene extends Phaser.Scene {
       abilityInfo.push(`${icon} ${(time / 1000).toFixed(0)}s`);
     });
     
-    this.hpText.setText(`HP: ${Math.floor(this.playerHP)}/${this.maxHP}`);
+    // Clamp displayed HP to 0 minimum
+    const displayHP = Math.max(0, Math.floor(this.playerHP));
+    
+    this.hpText.setText(`HP: ${displayHP}/${this.maxHP}`);
+    
+    // Show YOU DIED message in HUD when HP is 0
+    if (displayHP === 0 && !this.gameOver) {
+      this.hpText.setText(`HP: 0/${this.maxHP} - YOU DIED!`);
+      this.hpText.setColor('#ff0000');
+    } else if (displayHP < 30) {
+      // Low HP warning (red text)
+      this.hpText.setColor('#ef4444');
+    } else {
+      this.hpText.setColor('#22c55e');
+    }
+    
     this.scoreText.setText(`Score: ${this.score}`);
     this.waveText.setText(`Wave: ${this.currentWave}`);
     this.abilitiesText.setText(abilityInfo.length > 0 ? abilityInfo.join('  ') : '');
@@ -879,13 +901,13 @@ export class GameScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(10);
     
-    // Scale to 200x200 for much better visibility (2x original)
-    this.player.setDisplaySize(200, 200);
+    // Scale to 120x120 for better visibility and performance balance
+    this.player.setDisplaySize(120, 120);
     
-    // Make physics body smaller than sprite for easier movement (50% of visual size)
+    // Proportional physics body for better collision (60% of visual size)
     if (this.player.body) {
-      this.player.body.setSize(50, 50);
-      this.player.body.setOffset(25, 50); // Center the body
+      this.player.body.setSize(70, 70);
+      this.player.body.setOffset(25, 30); // Center the body
     }
     
     // Play idle animation
@@ -925,12 +947,12 @@ export class GameScene extends Phaser.Scene {
         this.setupEnemy(enemy, enemyType);
         enemy.setDepth(8);
         
-        // Scale to 160x160 for much better visibility
-        enemy.setDisplaySize(160, 160);
+        // Scale to 110x110 for better visibility and hitbox balance
+        enemy.setDisplaySize(110, 110);
         
-        // Make physics body smaller for easier combat (40% of visual size)
-        enemy.body.setSize(40, 40);
-        enemy.body.setOffset(30, 40);
+        // Proportional physics body (60% of visual size)
+        enemy.body.setSize(65, 65);
+        enemy.body.setOffset(23, 28);
         
         // Apply color tint based on enemy type for visual variety
         if (enemyType === 'Fast') {
@@ -965,53 +987,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
   
-  private getEnemyAnimKey(enemyType: string, anim: string): string {
-    // Map enemy types to animation keys
-    const typeMap: { [key: string]: string } = {
-      'Goblin': 'goblin',
-      'Fast': 'slime',
-      'Tank': 'skeleton',
-      'Boss': 'dragon',
-      'Skeleton': 'skeleton',
-      'Slime': 'slime',
-      'Dragon': 'dragon'
-    };
-    const animPrefix = typeMap[enemyType] || 'goblin';
-    return `${animPrefix}-${anim}`;
-  }
-  
-  private getEnemyTextureByType(type: string): string {
-    // Check if sprite sheets exist, use them if available
-    const spriteMap: { [key: string]: string } = {
-      'Fast': this.textures.exists('enemy-slime-sprite') ? 'enemy-slime-sprite' : 'slime',
-      'Tank': this.textures.exists('enemy-skeleton-sprite') ? 'enemy-skeleton-sprite' : 'skeleton',
-      'Boss': this.textures.exists('enemy-dragon-sprite') ? 'enemy-dragon-sprite' : 'dragon',
-      'Goblin': this.textures.exists('enemy-goblin-sprite') ? 'enemy-goblin-sprite' : 'goblin',
-      'Skeleton': this.textures.exists('enemy-skeleton-sprite') ? 'enemy-skeleton-sprite' : 'skeleton',
-      'Slime': this.textures.exists('enemy-slime-sprite') ? 'enemy-slime-sprite' : 'slime',
-      'Dragon': this.textures.exists('enemy-dragon-sprite') ? 'enemy-dragon-sprite' : 'dragon'
-    };
-    
-    return spriteMap[type] || (this.textures.exists('enemy-goblin-sprite') ? 'enemy-goblin-sprite' : 'goblin');
-  }
-  
-  private getEnemyTextureByType_OLD(type: string): string {
-    switch (type) {
-      case 'Fast': return 'slime';
-      case 'Tank': return 'skeleton';
-      case 'Boss': return 'dragon';
-      default: return this.getEnemyTexture();
-    }
-  }
-  
-  private getEnemyTexture(): string {
-    switch (this.monsterType) {
-      case 'Skeleton': return 'skeleton';
-      case 'Slime': return 'slime';
-      case 'Dragon': return 'dragon';
-      default: return 'goblin';
-    }
-  }
+  // REMOVED: getEnemyAnimKey() - never used
+  // REMOVED: getEnemyTextureByType() - never used 
+  // REMOVED: getEnemyTextureByType_OLD() - old version
+  // REMOVED: getEnemyTexture() - never used
   
   private startNextWave() {
     this.waveInProgress = false;
@@ -1150,6 +1129,15 @@ export class GameScene extends Phaser.Scene {
     enemy.setData('speed', speed);
     enemy.setData('attackRange', attackRange);
     enemy.setData('attackCooldown', 0);
+    
+    // Create HP bars ONCE here (not every frame!)
+    const bgBar = this.add.rectangle(enemy.x, enemy.y - 50, 32, 4, 0x000000, 0.5);
+    bgBar.setDepth(10);
+    enemy.setData('healthBarBg', bgBar);
+    
+    const hpBar = this.add.rectangle(enemy.x, enemy.y - 50, 32, 4, 0x22c55e);
+    hpBar.setDepth(11);
+    enemy.setData('healthBar', hpBar);
   }
   
   private applyModifier() {
@@ -1509,6 +1497,12 @@ export class GameScene extends Phaser.Scene {
       duration: 600,
       delay: 400,
       onComplete: () => {
+        // Destroy HP bars before destroying enemy
+        const bgBar = enemy.getData('healthBarBg');
+        const hpBar = enemy.getData('healthBar');
+        if (bgBar) bgBar.destroy();
+        if (hpBar) hpBar.destroy();
+        
         // Enhanced particle burst effect
         const particleCount = 16;
         for (let i = 0; i < particleCount; i++) {
