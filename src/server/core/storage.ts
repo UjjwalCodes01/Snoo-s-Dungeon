@@ -167,4 +167,75 @@ export class DungeonStorage {
     const leaderboardKey = `leaderboard:${this.getTodayKey()}`;
     return await redis.zCard(leaderboardKey);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DAILY STREAK SYSTEM
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Get user's streak data
+   */
+  static async getStreak(username: string): Promise<{ current: number; best: number; lastPlayed: string }> {
+    const key = `streak:${username}`;
+    const data = await redis.get(key);
+    
+    if (!data) {
+      return { current: 0, best: 0, lastPlayed: '' };
+    }
+    
+    return JSON.parse(data);
+  }
+
+  /**
+   * Update user's streak after playing
+   */
+  static async updateStreak(username: string): Promise<{ current: number; best: number; isNewDay: boolean }> {
+    const key = `streak:${username}`;
+    const today = this.getTodayKey();
+    const streakData = await this.getStreak(username);
+    
+    // Check if already played today
+    if (streakData.lastPlayed === today) {
+      return { 
+        current: streakData.current, 
+        best: streakData.best,
+        isNewDay: false 
+      };
+    }
+    
+    // Check if played yesterday (for streak continuation)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = yesterday.toISOString().split('T')[0] || '';
+    
+    let newCurrent: number;
+    if (streakData.lastPlayed === yesterdayKey) {
+      // Continuing streak
+      newCurrent = streakData.current + 1;
+    } else {
+      // Starting new streak
+      newCurrent = 1;
+    }
+    
+    const newBest = Math.max(streakData.best, newCurrent);
+    
+    const newData = {
+      current: newCurrent,
+      best: newBest,
+      lastPlayed: today
+    };
+    
+    await redis.set(key, JSON.stringify(newData));
+    
+    return { current: newCurrent, best: newBest, isNewDay: true };
+  }
+
+  /**
+   * Get streak leaderboard (top streakers)
+   */
+  static async getStreakLeaderboard(limit: number = 10): Promise<{ username: string; streak: number }[]> {
+    // This would require a separate sorted set for streaks
+    // For now, return empty - can be expanded later
+    return [];
+  }
 }

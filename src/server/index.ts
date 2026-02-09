@@ -73,6 +73,9 @@ router.post('/api/submit-score', async (req, res) => {
     // Get player's rank
     const rank = await DungeonStorage.getUserRank(username);
     
+    // Update streak when submitting score
+    const streakResult = await DungeonStorage.updateStreak(username);
+    
     const response: SubmitScoreResponse = {
       success: true,
       message: 'Score submitted successfully'
@@ -82,10 +85,35 @@ router.post('/api/submit-score', async (req, res) => {
       response.rank = rank;
     }
     
+    // Include streak info in response
+    (response as any).streak = {
+      current: streakResult.current,
+      best: streakResult.best,
+      isNewDay: streakResult.isNewDay
+    };
+    
     res.json(response);
   } catch (error) {
     console.error('Failed to submit score:', error);
     res.status(500).json({ success: false, error: 'Failed to submit score' });
+  }
+});
+
+// Get user's streak data
+router.get('/api/streak', async (_req, res) => {
+  try {
+    const username = context.username || 'Anonymous';
+    const streak = await DungeonStorage.getStreak(username);
+    
+    res.json({
+      username,
+      current: streak.current,
+      best: streak.best,
+      lastPlayed: streak.lastPlayed
+    });
+  } catch (error) {
+    console.error('Failed to get streak:', error);
+    res.status(500).json({ error: 'Failed to get streak data' });
   }
 });
 
@@ -111,6 +139,33 @@ router.get('/api/leaderboard', async (_req, res) => {
   } catch (error) {
     console.error('Failed to fetch leaderboard:', error);
     res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// Share score to Reddit as a comment on the post
+router.post('/api/share-score', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const username = context.username || 'Anonymous';
+    
+    // Get the current post ID from context
+    const postId = context.postId;
+    
+    if (postId && text) {
+      // Post a comment to the dungeon post
+      await reddit.submitComment({
+        id: postId,
+        text: `**${username}'s Score:**\n\n${text}`
+      });
+      
+      res.json({ success: true, message: 'Score shared!' });
+    } else {
+      // Fallback: just acknowledge without posting
+      res.json({ success: true, message: 'Share acknowledged' });
+    }
+  } catch (error) {
+    console.error('Failed to share score:', error);
+    res.status(500).json({ success: false, error: 'Failed to share score' });
   }
 });
 

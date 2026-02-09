@@ -7,6 +7,28 @@ import { GhostViewer } from './GhostViewer';
 import { SubmissionGuide } from './SubmissionGuide';
 import { AdminPanel } from './AdminPanel';
 
+// Streak hook
+const useStreak = () => {
+  const [streak, setStreak] = useState({ current: 0, best: 0, lastPlayed: '' });
+  
+  useEffect(() => {
+    const fetchStreak = async () => {
+      try {
+        const res = await fetch('/api/streak');
+        if (res.ok) {
+          const data = await res.json();
+          setStreak({ current: data.current, best: data.best, lastPlayed: data.lastPlayed });
+        }
+      } catch (err) {
+        console.error('Failed to fetch streak:', err);
+      }
+    };
+    fetchStreak();
+  }, []);
+  
+  return streak;
+};
+
 // Countdown timer hook
 const useCountdown = () => {
   const [timeLeft, setTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
@@ -78,6 +100,7 @@ export const App = () => {
   const { layout, monster, modifier, date, loading, error } = useDailyContent();
   const [activeTab, setActiveTab] = useState<'play' | 'create'>('play');
   const countdown = useCountdown();
+  const streak = useStreak();
   const [mounted, setMounted] = useState(false);
   
   // TODO: This should come from Devvit context in production
@@ -143,6 +166,25 @@ export const App = () => {
             </div>
           )}
 
+          {/* Streak Banner (if user has a streak) */}
+          {streak.current > 0 && (
+            <div className="bg-gradient-to-r from-orange-500/20 via-yellow-500/20 to-orange-500/20 border border-orange-500/30 rounded-xl p-4 mb-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">🔥</span>
+                <div>
+                  <p className="text-orange-300 font-bold text-lg">{streak.current} Day Streak!</p>
+                  <p className="text-orange-200/60 text-sm">Best: {streak.best} days • Keep playing daily!</p>
+                </div>
+              </div>
+              <div className="hidden md:flex items-center gap-1">
+                {[...Array(Math.min(streak.current, 7))].map((_, i) => (
+                  <span key={i} className="text-xl">🔥</span>
+                ))}
+                {streak.current > 7 && <span className="text-orange-400 text-sm ml-1">+{streak.current - 7}</span>}
+              </div>
+            </div>
+          )}
+
           {/* Challenge + Countdown Row */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
             {/* Challenge Cards */}
@@ -159,10 +201,10 @@ export const App = () => {
               color="from-purple-500/20 to-purple-900/20"
             />
             <ChallengeCard 
-              icon="🗺️"
-              label="Layout"
-              value="Community Design"
-              color="from-blue-500/20 to-blue-900/20"
+              icon="🔥"
+              label="Your Streak"
+              value={streak.current > 0 ? `${streak.current} days` : 'Start today!'}
+              color="from-orange-500/20 to-yellow-900/20"
             />
             
             {/* Countdown */}

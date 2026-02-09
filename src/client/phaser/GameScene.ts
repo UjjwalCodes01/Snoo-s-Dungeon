@@ -133,6 +133,36 @@ export class GameScene extends Phaser.Scene {
   private isBossWave = false;
   private bossSpawned = false;
   private achievements: Set<string> = new Set();
+  private totalKills = 0;
+  private waveStartHP = 0;
+  private waveStartTime = 0;
+  private bossesKilled = 0;
+
+  // ── Mobile touch ──
+  private isMobile = false;
+  private touchJoystick?: { 
+    base: Phaser.GameObjects.Arc; 
+    thumb: Phaser.GameObjects.Arc; 
+    pointerId: number; 
+    baseX: number; 
+    baseY: number;
+    radius: number;
+    active: boolean;
+    dx: number;
+    dy: number;
+  };
+  private touchButtons: Map<string, { 
+    circle: Phaser.GameObjects.Arc; 
+    label: Phaser.GameObjects.Text; 
+    pressed: boolean;
+    pointerId: number;
+  }> = new Map();
+
+  // ── Sound ──
+  private sfx: Record<string, () => void> = {};
+  private soundEnabled = true;
+  private badgeQueue: { title: string; desc: string }[] = [];
+  private badgeShowing = false;
 
   // ── Config ──
   private layout = '';
@@ -190,6 +220,13 @@ export class GameScene extends Phaser.Scene {
     this.equipBonusSpeed = 0;
     this.burnEffects.clear();
     this.freezeEffects.clear();
+    this.totalKills = 0;
+    this.waveStartHP = 0;
+    this.waveStartTime = 0;
+    this.bossesKilled = 0;
+    this.badgeQueue = [];
+    this.badgeShowing = false;
+    this.achievements = new Set();
 
     // Apply class stats
     const stats = CLASS_STATS[this.playerClass];
@@ -385,6 +422,10 @@ export class GameScene extends Phaser.Scene {
     this.eKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.qKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
 
+    // Mobile detection & touch controls
+    this.isMobile = !this.sys.game.device.os.desktop;
+    if (this.isMobile) this.createTouchControls();
+
     // Collisions
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.collider(this.enemies, this.walls);
@@ -423,6 +464,9 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 640, 640);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
+    this.waveStartHP = this.playerHP;
+    this.waveStartTime = Date.now();
+    this.generateSfx();
     this.fetchGhosts();
   }
 
@@ -516,7 +560,7 @@ export class GameScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
     });
 
-    const hint = this.add.text(320, 400, 'Press any key to start...', {
+    const hint = this.add.text(320, 400, this.isMobile ? 'Tap to start...' : 'Press any key to start...', {
       fontSize: '16px', color: '#888', fontStyle: 'italic'
     }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
     this.tweens.add({ targets: hint, alpha: 0.4, yoyo: true, duration: 800, repeat: -1 });
@@ -534,8 +578,10 @@ export class GameScene extends Phaser.Scene {
         }
       });
       this.input.keyboard!.off('keydown', dismiss);
+      this.input.off('pointerdown', dismiss);
     };
     this.input.keyboard!.on('keydown', dismiss);
+    this.input.on('pointerdown', dismiss);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -544,6 +590,10 @@ export class GameScene extends Phaser.Scene {
   override update(_time: number, delta: number) {
     if (this.gameOver) {
       if (this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R).isDown) {
+        this.scene.restart();
+      }
+      // Mobile: tap anywhere to restart
+      if (this.isMobile && this.input.activePointer.isDown && this.input.activePointer.downY < 500) {
         this.scene.restart();
       }
       return;
@@ -563,6 +613,18 @@ export class GameScene extends Phaser.Scene {
     if (this.cursors.right.isDown || this.wasd.D.isDown) vx = effectiveSpeed;
     if (this.cursors.up.isDown    || this.wasd.W.isDown) vy = -effectiveSpeed;
     if (this.cursors.down.isDown  || this.wasd.S.isDown) vy = effectiveSpeed;
+
+    // Touch joystick input
+    if (this.touchJoystick && this.touchJoystick.pointerId >= 0) {
+      const dx = this.touchJoystick.thumb.x - this.touchJoystick.baseX;
+      const dy = this.touchJoystick.thumb.y - this.touchJoystick.baseY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 8) {
+        vx = (dx / dist) * effectiveSpeed;
+        vy = (dy / dist) * effectiveSpeed;
+      }
+    }
+
     if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
     this.player.setVelocity(vx, vy);
 
@@ -596,23 +658,23 @@ export class GameScene extends Phaser.Scene {
     // ── Inputs ──
     const classStats = CLASS_STATS[this.playerClass];
 
-    if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.attackCooldown <= 0) {
+    if ((Phaser.Input.Keyboard.JustDown(this.spaceKey) || this.isTouchBtnPressed('attack')) && this.attackCooldown <= 0) {
       this.attack();
       const atkMul = this.activePowerUps.has('attackSpeed') ? 0.5 : 1;
       this.attackCooldown = classStats.attackRate * atkMul;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.shiftKey) && this.dashCooldown <= 0) {
+    if ((Phaser.Input.Keyboard.JustDown(this.shiftKey) || this.isTouchBtnPressed('dash')) && this.dashCooldown <= 0) {
       this.dash();
       this.dashCooldown = classStats.dashCooldown;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.eKey) && this.areaCooldown <= 0) {
+    if ((Phaser.Input.Keyboard.JustDown(this.eKey) || this.isTouchBtnPressed('area')) && this.areaCooldown <= 0) {
       this.areaAttack();
       this.areaCooldown = classStats.areaCooldown;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.qKey) && this.attackCooldown <= 0) {
+    if ((Phaser.Input.Keyboard.JustDown(this.qKey) || this.isTouchBtnPressed('arrow')) && this.attackCooldown <= 0) {
       this.shootArrow();
       this.attackCooldown = classStats.attackRate * 0.8;
     }
@@ -720,11 +782,11 @@ export class GameScene extends Phaser.Scene {
     //   Soldier: 17x21 content in 100x100 frame, centered at (41,39)
     //   Rogue:   35x29 content in 80x80 frame, at (19,35)
     //   DK:      full 48x32 frame (no alpha channel, palette mode)
-    // Display sizes scaled so visible character is ~50-55px tall
+    // Display sizes scaled 50% smaller for more movement space
     const sizes: Record<PlayerClass, { dw: number; dh: number; bw: number; bh: number; offX: number; offY: number }> = {
-      warrior:       { dw: 250, dh: 250, bw: 20, bh: 24, offX: 40, offY: 38 },  // 100x100 native, content 17x21 at (41,39)
-      rogue:         { dw: 150, dh: 150, bw: 36, bh: 30, offX: 19, offY: 35 },  // 80x80 native, content 35x29 at (19,35)
-      'dark-knight': { dw: 85,  dh: 56,  bw: 30, bh: 24, offX: 9,  offY: 4  },  // 48x32 native, full frame
+      warrior:       { dw: 125, dh: 125, bw: 10, bh: 12, offX: 20, offY: 19 },  // 100x100 native, content 17x21 at (41,39)
+      rogue:         { dw: 75,  dh: 75,  bw: 18, bh: 15, offX: 9,  offY: 17 },  // 80x80 native, content 35x29 at (19,35)
+      'dark-knight': { dw: 42,  dh: 28,  bw: 15, bh: 12, offX: 4,  offY: 2  },  // 48x32 native, full frame
     };
     const sz = sizes[this.playerClass];
     this.player.setDisplaySize(sz.dw, sz.dh);
@@ -946,15 +1008,16 @@ export class GameScene extends Phaser.Scene {
     const textureKey = `${kind}-idle`;
     const enemy = this.enemies.create(x, y, textureKey) as Phaser.Physics.Arcade.Sprite;
     enemy.setDepth(8);
+    enemy.setCollideWorldBounds(true);
 
     // Sizes from actual pixel content bounding boxes:
-    //   Orc:      23x18 content in 100x100 frame, at (43,42) → display 270x270 for ~55px char
-    //   Skeleton: 15x15 content in 32x32 frame, at (7,14) → display 115x115 for ~55px char
-    //   Vampire:  12x16 content in 32x32 frame, at (7,13) → display 110x110 for ~55px char
+    //   Orc:      23x18 content in 100x100 frame, at (43,42) → display reduced 50%
+    //   Skeleton: 15x15 content in 32x32 frame, at (7,14) → display reduced 50%
+    //   Vampire:  12x16 content in 32x32 frame, at (7,13) → display reduced 50%
     const displaySizes: Record<EnemyKind, { w: number; h: number }> = {
-      orc:      { w: 270, h: 270 },
-      skeleton: { w: 115, h: 115 },
-      vampire:  { w: 110, h: 110 },
+      orc:      { w: 135, h: 135 },
+      skeleton: { w: 57,  h: 57 },
+      vampire:  { w: 55,  h: 55 },
     };
     const ds = displaySizes[kind];
     enemy.setDisplaySize(ds.w * bossScale, ds.h * bossScale);
@@ -965,11 +1028,11 @@ export class GameScene extends Phaser.Scene {
     enemy.setData('targetScaleX', targetScaleX);
     enemy.setData('targetScaleY', targetScaleY);
 
-    // Physics body in NATIVE sprite coords — centered on the actual character content
+    // Physics body in NATIVE sprite coords — perfectly centered for all enemies
     const bodySizes: Record<EnemyKind, { w: number; h: number; ox: number; oy: number }> = {
-      orc:      { w: 24, h: 20, ox: 42, oy: 42 },   // content at (43,42)
-      skeleton: { w: 16, h: 16, ox: 7,  oy: 14 },   // content at (7,14)
-      vampire:  { w: 14, h: 18, ox: 7,  oy: 13 },   // content at (7,13)
+      orc:      { w: 35, h: 32, ox: 32, oy: 34 },   // centered in 100x100 frame, very large hitbox
+      skeleton: { w: 14, h: 14, ox: 9,  oy: 9  },   // centered in 32x32 frame
+      vampire:  { w: 16, h: 18, ox: 8,  oy: 7  },   // centered in 32x32 frame
     };
     const bs = bodySizes[kind];
     if (enemy.body) {
@@ -1025,6 +1088,7 @@ export class GameScene extends Phaser.Scene {
     if (!tile) return;
 
     this.spawnEnemy(tile.x, tile.y, 'vampire', 1.8);
+    this.playSfx('boss');
 
     this.cameras.main.shake(500, 0.015);
     const label = this.add.text(320, 300, '⚔️ VAMPIRE LORD ⚔️', {
@@ -1040,6 +1104,9 @@ export class GameScene extends Phaser.Scene {
   private startNextWave() {
     this.waveInProgress = false;
     this.currentWave++;
+    this.waveStartHP = this.playerHP;
+    this.waveStartTime = Date.now();
+    this.playSfx('wave');
 
     // Victory after wave 20!
     if (this.currentWave > 20) {
@@ -1085,7 +1152,9 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(60, 0.006);
 
     const facingRight = !this.player.flipX;
-    const lx = facingRight ? 22 : -22;
+    // Class-dependent lunge distance
+    const lungeDistances: Record<PlayerClass, number> = { warrior: 22, rogue: 18, 'dark-knight': 14 };
+    const lx = facingRight ? lungeDistances[this.playerClass] : -lungeDistances[this.playerClass];
     this.tweens.add({ targets: this.player, x: this.player.x + lx, duration: 80, yoyo: true, ease: 'Power2.easeOut' });
 
     const baseDmg = this.playerDamage + this.equipBonusDamage;
@@ -1099,15 +1168,23 @@ export class GameScene extends Phaser.Scene {
     const hitCount = this.playerClass === 'rogue' ? 2 : (this.activePowerUps.has('multiShot') ? 3 : 1);
     const angleSpread = hitCount > 1 ? Math.PI / 8 : 0;
 
+    // Class-dependent attack reach - zero forward offset to hit enemies at any distance
+    const atkOffsets: Record<PlayerClass, { forward: number; sweep: number; radius: number }> = {
+      warrior:       { forward: 6, sweep: 18, radius: 45 },  // working fine - don't change
+      rogue:         { forward: 6, sweep: 18, radius: 38 },  // working fine - don't change
+      'dark-knight': { forward: 0, sweep: 0,  radius: 60 },  // exactly at player center, huge radius
+    };
+    const atkCfg = atkOffsets[this.playerClass];
+
     for (let i = 0; i < hitCount; i++) {
       const a = (i - Math.floor(hitCount / 2)) * angleSpread;
-      const ox = Math.cos(a) * 40 * (facingRight ? 1 : -1);
-      const oy = Math.sin(a) * 40;
+      const ox = Math.cos(a) * atkCfg.sweep * (facingRight ? 1 : -1);
+      const oy = Math.sin(a) * atkCfg.sweep;
 
-      const hbX = this.player.x + ox + (facingRight ? 35 : -35);
+      const hbX = this.player.x + ox + (facingRight ? atkCfg.forward : -atkCfg.forward);
       const hbY = this.player.y + oy;
       const hb = this.attackHitbox.create(hbX, hbY, undefined) as Phaser.Physics.Arcade.Sprite;
-      hb.setCircle(28);  // bigger hitbox radius
+      hb.setCircle(atkCfg.radius);
       hb.setData('damage', finalDmg);
       hb.setData('element', element);
       hb.setAlpha(0);
@@ -1134,11 +1211,23 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(700, () => fx.destroy());
     }
 
-    // Warrior has a slight forward lunge on attack
-    if (this.playerClass === 'warrior') {
-      this.player.setVelocity(facingRight ? 150 : -150, 0);
-      this.time.delayedCall(100, () => { if (!this.gameOver) this.player.setVelocity(0, 0); });
-    }
+    // Forward lunge on attack (all classes get a small lunge)
+    const lungeSpeed: Record<PlayerClass, number> = {
+      warrior: 150,
+      rogue: 100,
+      'dark-knight': 120
+    };
+    const lungeDuration: Record<PlayerClass, number> = {
+      warrior: 100,
+      rogue: 80,
+      'dark-knight': 120
+    };
+    this.player.setVelocity(facingRight ? lungeSpeed[this.playerClass] : -lungeSpeed[this.playerClass], 0);
+    this.time.delayedCall(lungeDuration[this.playerClass], () => { 
+      if (!this.gameOver) this.player.setVelocity(0, 0); 
+    });
+
+    this.playSfx('attack');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1169,6 +1258,7 @@ export class GameScene extends Phaser.Scene {
     const vx = this.player.body!.velocity.x;
     const vy = this.player.body!.velocity.y;
     if (vx === 0 && vy === 0) return;
+    this.playSfx('dash');
 
     const angle = Math.atan2(vy, vx);
     const dashSpeed = this.playerClass === 'rogue' ? 800 : 600;
@@ -1240,6 +1330,51 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(i * 40, () => {
         const t = this.add.circle(this.player.x, this.player.y, 14, trailColor, 0.5 - i * 0.1).setDepth(9);
         this.tweens.add({ targets: t, alpha: 0, scale: 0.3, duration: 300, onComplete: () => t.destroy() });
+      });
+    }
+
+    // Dash attack: damage enemies we pass through
+    const dashDmg = Math.floor((this.playerDamage + this.equipBonusDamage) * 0.8);
+    const dashHitRadius = 50;
+    const hitEnemies = new Set<Phaser.Physics.Arcade.Sprite>();
+    
+    // Check for enemies hit during dash (multiple checks during dash)
+    for (let checkTime = 0; checkTime < dashDuration; checkTime += 40) {
+      this.time.delayedCall(checkTime, () => {
+        this.enemies.children.entries.forEach((obj) => {
+          const e = obj as Phaser.Physics.Arcade.Sprite;
+          if (!e.active || hitEnemies.has(e)) return;
+          const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, e.x, e.y);
+          if (d < dashHitRadius) {
+            hitEnemies.add(e);
+            let hp = e.getData('hp');
+            hp -= dashDmg;
+            e.setData('hp', hp);
+            const kind = e.getData('kind') as EnemyKind;
+            e.play(this.enemyAnim(kind, 'hurt'), true);
+            e.setTint(0xff4444);
+            
+            // Damage number
+            const dt = this.add.text(e.x, e.y - 30, `-${dashDmg}`, {
+              fontSize: '18px', color: trailColor === 0xef4444 ? '#ef4444' : '#60a5fa',
+              fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+            }).setOrigin(0.5).setDepth(100);
+            this.tweens.add({ targets: dt, y: dt.y - 30, alpha: 0, duration: 500, onComplete: () => dt.destroy() });
+            
+            // Knockback
+            const kb = Phaser.Math.Angle.Between(this.player.x, this.player.y, e.x, e.y);
+            this.tweens.add({
+              targets: e,
+              x: e.x + Math.cos(kb) * 20,
+              y: e.y + Math.sin(kb) * 20,
+              duration: 100, ease: 'Power2',
+              onComplete: () => { const bt = e.getData('baseTint') || 0xffffff; e.setTint(bt); }
+            });
+            
+            this.playSfx('hit');
+            if (hp <= 0) this.handleEnemyDeath(e);
+          }
+        });
       });
     }
 
@@ -1359,6 +1494,8 @@ export class GameScene extends Phaser.Scene {
     hp -= damage;
     enemy.setData('hp', hp);
 
+    this.playSfx('hit');
+
     if (element !== 'none') this.applyElement(enemy, element);
 
     // Life steal
@@ -1441,6 +1578,10 @@ export class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════════════════════
   private handleEnemyDeath(enemy: Phaser.Physics.Arcade.Sprite) {
     const kind = enemy.getData('kind') as EnemyKind;
+    this.totalKills++;
+    if (enemy.getData('barWidth') > 60) this.bossesKilled++;
+
+    this.playSfx('kill');
 
     // Combo
     const now = Date.now();
@@ -1647,6 +1788,7 @@ export class GameScene extends Phaser.Scene {
 
   private collectPowerUp(type: string, duration: number) {
     this.activePowerUps.set(type, duration);
+    this.playSfx('pickup');
 
     const notif = this.add.text(this.player.x, this.player.y - 40, type.toUpperCase(), {
       fontSize: '18px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
@@ -1743,6 +1885,7 @@ export class GameScene extends Phaser.Scene {
     this._won = false;
     this.player.play(this.playerAnim('death'), true);
     this.player.setVelocity(0, 0);
+    this.playSfx('gameOver');
 
     const cx = this.cameras.main.width / 2;
     const cy = this.cameras.main.height / 2;
@@ -1768,6 +1911,9 @@ export class GameScene extends Phaser.Scene {
       fontSize: '16px', color: '#aaa'
     }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
 
+    // Share to Reddit button
+    this.createShareButton(cx, cy + 110, this.score, this.currentWave, false);
+
     if (this.onGameOverCallback) {
       this.onGameOverCallback(this.score, Math.floor(this.player.x / 64), Math.floor(this.player.y / 64));
     }
@@ -1776,6 +1922,7 @@ export class GameScene extends Phaser.Scene {
   private handleVictory() {
     this.gameOver = true;
     this._won = true;
+    this.playSfx('victory');
 
     this._gameOverText = this.add.text(320, 270, '🏆 YOU WIN!', {
       fontSize: '48px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
@@ -1788,6 +1935,9 @@ export class GameScene extends Phaser.Scene {
     this.add.text(320, 360, 'Press R to restart', {
       fontSize: '16px', color: '#aaa'
     }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+
+    // Share to Reddit button
+    this.createShareButton(320, 400, this.score, this.currentWave, true);
 
     if (this.onVictoryCallback) this.onVictoryCallback(this.score);
   }
@@ -1803,20 +1953,67 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkAchievements() {
-    const list: { title: string; desc: string }[] = [];
+    const award = (id: string, title: string, desc: string) => {
+      if (!this.achievements.has(id)) {
+        this.achievements.add(id);
+        this.showAchievementBadge(title, desc);
+      }
+    };
 
-    if (this.currentWave === 5 && !this.achievements.has('w5'))   { this.achievements.add('w5');   list.push({ title: '🗡️ Survivor',     desc: 'Wave 5' }); }
-    if (this.currentWave === 10 && !this.achievements.has('w10')) { this.achievements.add('w10');  list.push({ title: '⚔️ Veteran',      desc: 'Wave 10' }); }
-    if (this.currentWave === 20 && !this.achievements.has('w20')) { this.achievements.add('w20');  list.push({ title: '🏆 Champion',     desc: 'Wave 20' }); }
-    if (this.comboCount >= 5 && !this.achievements.has('c5'))     { this.achievements.add('c5');   list.push({ title: '🔥 Combo Master', desc: '5x Combo' }); }
-    if (this.score >= 10000 && !this.achievements.has('s10k'))    { this.achievements.add('s10k'); list.push({ title: '⭐ High Scorer',  desc: '10k Points' }); }
+    // Wave progression
+    if (this.currentWave >= 5)  award('w5',  '🗡️ Survivor',      'Reached Wave 5');
+    if (this.currentWave >= 10) award('w10', '⚔️ Veteran',       'Reached Wave 10');
+    if (this.currentWave >= 15) award('w15', '💀 Undying',       'Reached Wave 15');
+    if (this.currentWave >= 20) award('w20', '🏆 Champion',      'Completed All 20 Waves');
 
-    list.forEach((a, i) => {
-      const at = this.add.text(320, 100 + i * 50, `${a.title} — ${a.desc}`, {
-        fontSize: '22px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 3, align: 'center'
-      }).setOrigin(0.5).setDepth(1005);
-      this.tweens.add({ targets: at, alpha: 0, y: at.y - 40, duration: 3000, delay: 800, ease: 'Power2', onComplete: () => at.destroy() });
-    });
+    // Kill milestones
+    if (this.totalKills >= 10)  award('k10',  '🩸 First Blood',   'Slayed 10 Enemies');
+    if (this.totalKills >= 50)  award('k50',  '⚔️ Slayer',        'Slayed 50 Enemies');
+    if (this.totalKills >= 100) award('k100', '💀 Executioner',   'Slayed 100 Enemies');
+    if (this.totalKills >= 200) award('k200', '☠️ Death Incarnate', 'Slayed 200 Enemies');
+
+    // Boss kills
+    if (this.bossesKilled >= 1) award('b1', '👑 Boss Hunter',    'Defeated First Boss');
+    if (this.bossesKilled >= 3) award('b3', '🐉 Dragon Slayer',  'Defeated 3 Bosses');
+    if (this.bossesKilled >= 5) award('b5', '⚡ Boss Destroyer', 'Defeated 5 Bosses');
+
+    // Combo achievements
+    if (this.comboCount >= 5)  award('c5',  '🔥 Combo Starter', '5x Kill Combo');
+    if (this.comboCount >= 10) award('c10', '💥 Combo Master',  '10x Kill Combo');
+    if (this.comboCount >= 20) award('c20', '🌟 Unstoppable',   '20x Kill Combo');
+
+    // Score achievements
+    if (this.score >= 5000)  award('s5k',  '⭐ Rising Star',   '5,000 Points');
+    if (this.score >= 10000) award('s10k', '🌟 High Scorer',   '10,000 Points');
+    if (this.score >= 25000) award('s25k', '💫 Score Legend',  '25,000 Points');
+    if (this.score >= 50000) award('s50k', '✨ Score God',     '50,000 Points');
+
+    // Equipment collection
+    if (this.equipment.size >= 1) award('e1', '🛡️ Equipped',      'First Equipment');
+    if (this.equipment.size >= 3) award('e3', '⚙️ Geared Up',     '3 Equipment Items');
+    if (this.equipment.size >= 5) award('e5', '🎖️ Fully Loaded', '5 Equipment Items');
+
+    // Perfect wave (no damage taken)
+    if (this.waveStartHP > 0 && this.playerHP === this.waveStartHP && this.currentWave > 1) {
+      award('perfect', '✨ Perfect Wave', 'No Damage Taken');
+    }
+
+    // Speed clear (wave under 30 seconds)
+    const waveTime = (Date.now() - this.waveStartTime) / 1000;
+    if (this.waveStartTime > 0 && waveTime < 30 && this.enemies.countActive() === 0 && this.currentWave > 1) {
+      award('speed', '⚡ Speed Demon', 'Wave Under 30 Seconds');
+    }
+
+    // Class-specific achievements
+    if (this.playerClass === 'warrior' && this.totalKills >= 50) {
+      award('warrior50', '🛡️ True Warrior', '50 Kills as Warrior');
+    }
+    if (this.playerClass === 'rogue' && this.totalKills >= 50) {
+      award('rogue50', '🗡️ Shadow Assassin', '50 Kills as Rogue');
+    }
+    if (this.playerClass === 'dark-knight' && this.totalKills >= 50) {
+      award('dk50', '⚔️ Dark Champion', '50 Kills as Dark Knight');
+    }
   }
 
   private async fetchGhosts() {
@@ -1832,6 +2029,349 @@ export class GameScene extends Phaser.Scene {
       });
     } catch (err) {
       console.error('Failed to fetch ghosts:', err);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MOBILE TOUCH CONTROLS
+  // ═══════════════════════════════════════════════════════════════════════════
+  private createTouchControls() {
+    const camW = this.cameras.main.width;
+    const camH = this.cameras.main.height;
+
+    // Virtual joystick (left side)
+    const joyX = 90;
+    const joyY = camH - 100;
+    const joyRadius = 50;
+    const thumbRadius = 25;
+
+    const joyBase = this.add.circle(joyX, joyY, joyRadius, 0x333333, 0.5)
+      .setDepth(3000).setScrollFactor(0);
+    const joyThumb = this.add.circle(joyX, joyY, thumbRadius, 0xffffff, 0.7)
+      .setDepth(3001).setScrollFactor(0);
+
+    this.touchJoystick = {
+      base: joyBase,
+      thumb: joyThumb,
+      baseX: joyX,
+      baseY: joyY,
+      radius: joyRadius,
+      pointerId: -1,
+      active: false,
+      dx: 0,
+      dy: 0
+    };
+
+    // Action buttons (right side)
+    const btnSize = 36;
+    const btnGap = 16;
+    const btnX = camW - 70;
+    const btnY = camH - 100;
+
+    const buttons = [
+      { name: 'attack', color: 0xe74c3c, label: '⚔️', x: btnX, y: btnY - btnSize - btnGap },
+      { name: 'dash',   color: 0x3498db, label: '💨', x: btnX - btnSize - btnGap, y: btnY },
+      { name: 'area',   color: 0x9b59b6, label: '💥', x: btnX + btnSize + btnGap, y: btnY },
+      { name: 'arrow',  color: 0xf1c40f, label: '🏹', x: btnX, y: btnY + btnSize + btnGap }
+    ];
+
+    buttons.forEach(btn => {
+      const circle = this.add.circle(btn.x, btn.y, btnSize, btn.color, 0.6)
+        .setDepth(3000).setScrollFactor(0).setInteractive();
+      const label = this.add.text(btn.x, btn.y, btn.label, {
+        fontSize: '20px'
+      }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
+
+      this.touchButtons.set(btn.name, {
+        circle,
+        label,
+        pressed: false,
+        pointerId: -1
+      });
+    });
+
+    // Touch event handlers
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (!this.touchJoystick) return;
+      // Check joystick
+      const distToJoy = Phaser.Math.Distance.Between(pointer.x, pointer.y, this.touchJoystick.baseX, this.touchJoystick.baseY);
+      if (distToJoy <= joyRadius * 1.5 && !this.touchJoystick.active) {
+        this.touchJoystick.active = true;
+        this.touchJoystick.pointerId = pointer.id;
+      }
+
+      // Check buttons
+      this.touchButtons.forEach((btn) => {
+        const dist = Phaser.Math.Distance.Between(pointer.x, pointer.y, btn.circle.x, btn.circle.y);
+        if (dist <= btnSize * 1.3) {
+          btn.pressed = true;
+          btn.pointerId = pointer.id;
+          btn.circle.setAlpha(1);
+        }
+      });
+    });
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this.touchJoystick) return;
+      if (this.touchJoystick.active && this.touchJoystick.pointerId === pointer.id) {
+        const dx = pointer.x - this.touchJoystick.baseX;
+        const dy = pointer.y - this.touchJoystick.baseY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxDist = joyRadius;
+
+        if (dist > maxDist) {
+          this.touchJoystick.dx = (dx / dist) * maxDist;
+          this.touchJoystick.dy = (dy / dist) * maxDist;
+        } else {
+          this.touchJoystick.dx = dx;
+          this.touchJoystick.dy = dy;
+        }
+
+        joyThumb.setPosition(
+          this.touchJoystick.baseX + this.touchJoystick.dx,
+          this.touchJoystick.baseY + this.touchJoystick.dy
+        );
+      }
+    });
+
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!this.touchJoystick) return;
+      if (this.touchJoystick.pointerId === pointer.id) {
+        this.touchJoystick.active = false;
+        this.touchJoystick.pointerId = -1;
+        this.touchJoystick.dx = 0;
+        this.touchJoystick.dy = 0;
+        joyThumb.setPosition(this.touchJoystick.baseX, this.touchJoystick.baseY);
+      }
+
+      this.touchButtons.forEach((btn) => {
+        if (btn.pointerId === pointer.id) {
+          btn.pointerId = -1;
+          btn.circle.setAlpha(0.6);
+        }
+      });
+    });
+  }
+
+  private isTouchBtnPressed(name: string): boolean {
+    const btn = this.touchButtons.get(name);
+    if (btn && btn.pressed) {
+      btn.pressed = false; // One-shot trigger
+      return true;
+    }
+    return false;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROCEDURAL SOUND EFFECTS (Web Audio API)
+  // ═══════════════════════════════════════════════════════════════════════════
+  private generateSfx() {
+    // Access Web Audio context (only available with WebAudioSoundManager)
+    const soundManager = this.sound as any;
+    if (!soundManager.context) return;
+    const ctx = soundManager.context as AudioContext;
+
+    // Helper to create simple procedural sounds
+    const createOscSound = (freq: number, duration: number, type: OscillatorType = 'square', slide?: number) => {
+      return () => {
+        if (!this.soundEnabled) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        if (slide) {
+          osc.frequency.exponentialRampToValueAtTime(slide, ctx.currentTime + duration);
+        }
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration);
+      };
+    };
+
+    const createNoiseSound = (duration: number, lowpass: number) => {
+      return () => {
+        if (!this.soundEnabled) return;
+        const bufferSize = ctx.sampleRate * duration;
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = lowpass;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        source.start();
+      };
+    };
+
+    this.sfx = {
+      attack: createNoiseSound(0.08, 2000),
+      hit: createOscSound(200, 0.05, 'square', 100),
+      kill: createOscSound(400, 0.15, 'sawtooth', 100),
+      dash: createNoiseSound(0.12, 4000),
+      wave: createOscSound(440, 0.3, 'sine', 880),
+      boss: createOscSound(80, 0.4, 'sawtooth', 40),
+      gameOver: createOscSound(300, 0.5, 'sawtooth', 50),
+      victory: () => {
+        if (!this.soundEnabled) return;
+        [523, 659, 784, 1047].forEach((f, i) => {
+          setTimeout(() => createOscSound(f, 0.2, 'sine')(), i * 100);
+        });
+      },
+      pickup: createOscSound(600, 0.1, 'sine', 1200)
+    };
+  }
+
+  private playSfx(name: string) {
+    if (this.soundEnabled && this.sfx[name]) {
+      try {
+        this.sfx[name]();
+      } catch (e) {
+        // Silently ignore audio errors
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ACHIEVEMENT BADGE DISPLAY
+  // ═══════════════════════════════════════════════════════════════════════════
+  private showAchievementBadge(title: string, desc: string) {
+    this.badgeQueue.push({ title, desc });
+    if (!this.badgeShowing) {
+      this.displayNextBadge();
+    }
+  }
+
+  private displayNextBadge() {
+    if (this.badgeQueue.length === 0) {
+      this.badgeShowing = false;
+      return;
+    }
+
+    this.badgeShowing = true;
+    const badge = this.badgeQueue.shift()!;
+    const cx = this.cameras.main.width / 2;
+
+    // Badge container
+    const bg = this.add.rectangle(cx, -60, 280, 60, 0x1a1a2e, 0.95)
+      .setStrokeStyle(2, 0xfbbf24)
+      .setDepth(4000)
+      .setScrollFactor(0);
+
+    const titleText = this.add.text(cx, -70, badge.title, {
+      fontSize: '18px', color: '#fbbf24', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(4001).setScrollFactor(0);
+
+    const descText = this.add.text(cx, -50, badge.desc, {
+      fontSize: '12px', color: '#ffffff'
+    }).setOrigin(0.5).setDepth(4001).setScrollFactor(0);
+
+    this.playSfx('pickup');
+
+    // Slide in
+    this.tweens.add({
+      targets: [bg, titleText, descText],
+      y: '+=100',
+      duration: 400,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        // Hold, then slide out
+        this.time.delayedCall(2000, () => {
+          this.tweens.add({
+            targets: [bg, titleText, descText],
+            y: '-=100',
+            alpha: 0,
+            duration: 300,
+            ease: 'Power2',
+            onComplete: () => {
+              bg.destroy();
+              titleText.destroy();
+              descText.destroy();
+              this.displayNextBadge();
+            }
+          });
+        });
+      }
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SHARE TO REDDIT
+  // ═══════════════════════════════════════════════════════════════════════════
+  private createShareButton(x: number, y: number, score: number, wave: number, won: boolean) {
+    const btnBg = this.add.rectangle(x, y, 180, 36, 0xff4500, 1)
+      .setDepth(2002)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    
+    const btnText = this.add.text(x, y, '📤 Share to Reddit', {
+      fontSize: '14px', color: '#ffffff', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(2003).setScrollFactor(0);
+
+    // Hover effects
+    btnBg.on('pointerover', () => {
+      btnBg.setFillStyle(0xff6030);
+      btnText.setScale(1.05);
+    });
+
+    btnBg.on('pointerout', () => {
+      btnBg.setFillStyle(0xff4500);
+      btnText.setScale(1);
+    });
+
+    btnBg.on('pointerdown', () => {
+      this.shareToReddit(score, wave, won);
+      
+      // Visual feedback
+      btnBg.setFillStyle(0x22c55e);
+      btnText.setText('✓ Shared!');
+      
+      // Disable button after click
+      btnBg.disableInteractive();
+    });
+  }
+
+  private shareToReddit(score: number, wave: number, won: boolean) {
+    const status = won ? '🏆 VICTORY' : `💀 Died on Wave ${wave}`;
+    const emoji = won ? '🎉' : '⚔️';
+    const classEmoji = this.playerClass === 'warrior' ? '🛡️' : 
+                       this.playerClass === 'rogue' ? '🗡️' : '⚔️';
+    
+    const shareText = [
+      `${emoji} Snoo's Dungeon Score: ${score.toLocaleString()} points!`,
+      `${classEmoji} Class: ${this.playerClass.charAt(0).toUpperCase() + this.playerClass.slice(1)}`,
+      `📊 ${status}`,
+      `🏅 Badges: ${this.achievements.size}`,
+      `💀 Kills: ${this.totalKills}`,
+      '',
+      'Can you beat my score? 🎮'
+    ].join('\n');
+
+    // Post to Reddit via Devvit API
+    this.postShareComment(shareText);
+  }
+
+  private async postShareComment(text: string) {
+    try {
+      await fetch('/api/share-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      this.playSfx('pickup');
+    } catch (err) {
+      console.error('Failed to share:', err);
     }
   }
 }
