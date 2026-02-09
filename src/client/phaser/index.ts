@@ -5,6 +5,7 @@ export interface PhaserGameProps {
   layout: string;
   monster: string;
   modifier: string;
+  playerClass?: string;
   onGameOver: (score: number, deathX: number, deathY: number) => void;
   onVictory: (score: number) => void;
 }
