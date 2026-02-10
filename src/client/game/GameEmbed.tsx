@@ -119,7 +119,7 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
   const handleGameOver = async (score: number, deathX: number, deathY: number) => {
     console.log('Game Over! Score:', score, 'Death position:', { x: deathX, y: deathY });
     try {
-      await fetch('/api/submit-score', {
+      const res = await fetch('/api/submit-score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -128,15 +128,19 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
           survived: false,
         }),
       });
-    } catch (err) {
-      console.error('Failed to submit score:', err);
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Score submitted! Rank:', data.rank, 'Streak:', data.streak);
+      }
+    } catch (_err) {
+      // Score submission is best-effort; game works offline too
     }
   };
 
   const handleVictory = async (score: number) => {
     console.log('Victory! Score:', score);
     try {
-      await fetch('/api/submit-score', {
+      const res = await fetch('/api/submit-score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -144,8 +148,12 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
           survived: true,
         }),
       });
-    } catch (err) {
-      console.error('Failed to submit score:', err);
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Score submitted! Rank:', data.rank, 'Streak:', data.streak);
+      }
+    } catch (_err) {
+      // Score submission is best-effort; game works offline too
     }
   };
 

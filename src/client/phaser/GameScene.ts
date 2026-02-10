@@ -38,19 +38,19 @@ interface GameConfig {
 // ─── Class Stats ─────────────────────────────────────────────────────────────
 const CLASS_STATS: Record<PlayerClass, ClassStats> = {
   warrior: {
-    hp: 160, damage: 10, speed: 180, attackRate: 500,
-    dashCooldown: 3000, areaCooldown: 5000,
-    ability: 'Shield Slam – Wide knockback + invincibility', element: 'none',
+    hp: 200, damage: 16, speed: 180, attackRate: 400,
+    dashCooldown: 2500, areaCooldown: 4000,
+    ability: 'Shield Slam – Wide knockback + heal + invincibility', element: 'none',
   },
   rogue: {
-    hp: 95, damage: 20, speed: 310, attackRate: 200,
-    dashCooldown: 1000, areaCooldown: 3500,
+    hp: 85, damage: 14, speed: 290, attackRate: 230,
+    dashCooldown: 1200, areaCooldown: 3500,
     ability: 'Shadow Step – Teleport behind enemy + crit', element: 'none',
   },
   'dark-knight': {
-    hp: 125, damage: 16, speed: 230, attackRate: 350,
-    dashCooldown: 2000, areaCooldown: 4000,
-    ability: 'Dark Flame – Fire ring + burning trail', element: 'fire',
+    hp: 140, damage: 20, speed: 210, attackRate: 320,
+    dashCooldown: 1800, areaCooldown: 3500,
+    ability: 'Dark Flame – Fire ring + burn DoT + lifesteal', element: 'fire',
   },
 };
 
@@ -121,6 +121,7 @@ export class GameScene extends Phaser.Scene {
   private attackHitbox!: Phaser.Physics.Arcade.Group;
   private projectiles!: Phaser.Physics.Arcade.Group;
   private chests!: Phaser.Physics.Arcade.Group;
+  private tileGrid: string[] = [];  // cached parsed tile grid for fast wall checks
 
   // ── Input ──
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -952,6 +953,7 @@ export class GameScene extends Phaser.Scene {
     const gridSize = 10;
     const tileSize = 64;
     const tiles = this.layout.padEnd(100, '0').split('').slice(0, 100);
+    this.tileGrid = tiles;  // cache for snapPlayerOutOfWalls
 
     tiles.forEach((tile, index) => {
       const gx = index % gridSize;
@@ -960,12 +962,17 @@ export class GameScene extends Phaser.Scene {
       const py = gy * tileSize + tileSize / 2;
 
       if (tile === '0') {
-        const wall = this.walls.create(px, py, 'wood-wall') as Phaser.Physics.Arcade.Sprite;
-        wall.setOrigin(0.5).setDisplaySize(tileSize, tileSize).setTint(0x9b7f57);
+        // Use a simple invisible sprite for collision, plus a visual image on top
+        const wall = this.walls.create(px, py, '__DEFAULT') as Phaser.Physics.Arcade.Sprite;
+        wall.setVisible(false);
         const body = wall.body as Phaser.Physics.Arcade.StaticBody;
         body.setSize(tileSize, tileSize);
-        body.updateFromGameObject();
-        wall.setDepth(5).setAlpha(this.textures.exists('wood-wall') ? 1 : 0);
+        body.setOffset(-tileSize / 2, -tileSize / 2);
+        body.immovable = true;
+        // Visual wall image (non-physics)
+        if (this.textures.exists('wood-wall')) {
+          this.add.image(px, py, 'wood-wall').setOrigin(0.5).setDisplaySize(tileSize, tileSize).setTint(0x9b7f57).setDepth(5);
+        }
       } else if (tile === 'T' || tile === 't') {
         // Teleport tile — render floor + portal on top
         if (this.textures.exists('grass-tiles')) {
@@ -1521,7 +1528,9 @@ export class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════════════════════
   private attack() {
     this.player.play(this.playerAnim('attack'), true);
-    this.cameras.main.shake(60, 0.006);
+    // Class-specific screen shake — Warrior hits feel heavy
+    const shakeIntensity = this.playerClass === 'warrior' ? 0.012 : 0.006;
+    this.cameras.main.shake(60, shakeIntensity);
 
     const facingRight = !this.player.flipX;
     // Class-dependent lunge distance
@@ -1536,15 +1545,18 @@ export class GameScene extends Phaser.Scene {
     let element = this.playerElement;
     if (this.activePowerUps.has('freeze')) element = 'ice';
 
-    // Rogue attacks twice (fast dual-wield)
-    const hitCount = this.playerClass === 'rogue' ? 2 : (this.activePowerUps.has('multiShot') ? 3 : 1);
-    const angleSpread = hitCount > 1 ? Math.PI / 8 : 0;
+    // Hit pattern: Warrior cleaves 3 wide, Rogue dual-strikes, DK sweeps
+    const hitCount = this.playerClass === 'warrior' ? 3 :
+                     this.playerClass === 'rogue' ? 2 :
+                     (this.activePowerUps.has('multiShot') ? 3 : 1);
+    const angleSpread = this.playerClass === 'warrior' ? Math.PI / 5 :
+                        hitCount > 1 ? Math.PI / 8 : 0;
 
-    // Class-dependent attack reach - zero forward offset to hit enemies at any distance
+    // Class-dependent attack reach
     const atkOffsets: Record<PlayerClass, { forward: number; sweep: number; radius: number }> = {
-      warrior:       { forward: 6, sweep: 18, radius: 45 },  // working fine - don't change
-      rogue:         { forward: 6, sweep: 18, radius: 38 },  // working fine - don't change
-      'dark-knight': { forward: 0, sweep: 0,  radius: 60 },  // exactly at player center, huge radius
+      warrior:       { forward: 8, sweep: 20, radius: 55 },  // wide cleave
+      rogue:         { forward: 6, sweep: 18, radius: 36 },  // precise strikes
+      'dark-knight': { forward: 5, sweep: 10, radius: 65 },  // huge dark sweep
     };
     const atkCfg = atkOffsets[this.playerClass];
 
@@ -1577,24 +1589,28 @@ export class GameScene extends Phaser.Scene {
 
     // Dark Knight fire trail on every attack
     if (this.playerClass === 'dark-knight') {
-      const fxX = this.player.x + (facingRight ? 40 : -40);
-      this.playMagicEffect('fire-ball', fxX, this.player.y, 55);
+      const fxX = this.player.x + (facingRight ? 35 : -35);
+      const fx = this.playMagicEffect('fire-ball', fxX, this.player.y, 55);
+      if (fx) fx.setRotation(facingRight ? 0 : Math.PI);
     }
 
-    // Forward lunge on attack (all classes get a small lunge)
+    // Forward lunge on attack — Warrior gets a strong lunge
     const lungeSpeed: Record<PlayerClass, number> = {
-      warrior: 150,
+      warrior: 220,
       rogue: 100,
-      'dark-knight': 120
+      'dark-knight': 160
     };
     const lungeDuration: Record<PlayerClass, number> = {
-      warrior: 100,
+      warrior: 130,
       rogue: 80,
       'dark-knight': 120
     };
     this.player.setVelocity(facingRight ? lungeSpeed[this.playerClass] : -lungeSpeed[this.playerClass], 0);
     this.time.delayedCall(lungeDuration[this.playerClass], () => { 
-      if (!this.gameOver) this.player.setVelocity(0, 0); 
+      if (!this.gameOver) {
+        this.player.setVelocity(0, 0);
+        this.snapPlayerOutOfWalls();
+      }
     });
 
     this.playSfx('attack');
@@ -1604,21 +1620,55 @@ export class GameScene extends Phaser.Scene {
   // ARROW PROJECTILE (Q)
   // ═══════════════════════════════════════════════════════════════════════════
   private shootArrow() {
-    const facingRight = !this.player.flipX;
-    const arrow = this.projectiles.create(this.player.x, this.player.y, 'arrow-img') as Phaser.Physics.Arcade.Sprite;
-    arrow.setDisplaySize(32, 32).setDepth(12);
-    arrow.setData('damage', this.playerDamage + this.equipBonusDamage);
-    arrow.setData('element', this.playerElement);
+    const dmgMul = this.activePowerUps.has('damage') ? 2 : 1;
+    const baseDmg = Math.floor((this.playerDamage + this.equipBonusDamage) * dmgMul);
 
-    const speed = 400;
-    if (facingRight) {
-      arrow.setVelocityX(speed);
+    // Find nearest enemy to aim at
+    let aimAngle: number;
+    let closest: Phaser.Physics.Arcade.Sprite | null = null;
+    let closestDist = 400;
+    this.enemies.children.entries.forEach((obj) => {
+      const e = obj as Phaser.Physics.Arcade.Sprite;
+      if (!e.active) return;
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, e.x, e.y);
+      if (d < closestDist) { closest = e; closestDist = d; }
+    });
+    if (closest) {
+      aimAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, (closest as Phaser.Physics.Arcade.Sprite).x, (closest as Phaser.Physics.Arcade.Sprite).y);
     } else {
-      arrow.setVelocityX(-speed);
-      arrow.setFlipX(true);
+      // Fall back to facing direction
+      const vx = this.player.body!.velocity.x;
+      const vy = this.player.body!.velocity.y;
+      if (vx !== 0 || vy !== 0) {
+        aimAngle = Math.atan2(vy, vx);
+      } else {
+        aimAngle = this.player.flipX ? Math.PI : 0;
+      }
     }
 
-    this.time.delayedCall(2000, () => { if (arrow.active) arrow.destroy(); });
+    // DK shoots fire projectile, others shoot arrow
+    const isFireArrow = this.playerClass === 'dark-knight';
+    const arrowCount = this.activePowerUps.has('multiShot') ? 3 : 1;
+    const spread = arrowCount > 1 ? Math.PI / 10 : 0;
+
+    for (let i = 0; i < arrowCount; i++) {
+      const a = aimAngle + (i - Math.floor(arrowCount / 2)) * spread;
+      const arrow = this.projectiles.create(this.player.x, this.player.y, 'arrow-img') as Phaser.Physics.Arcade.Sprite;
+      arrow.setDisplaySize(32, 32).setDepth(12);
+      arrow.setData('damage', baseDmg);
+      arrow.setData('element', isFireArrow ? 'fire' : this.playerElement);
+      arrow.setRotation(a);
+
+      const speed = 450;
+      arrow.setVelocity(Math.cos(a) * speed, Math.sin(a) * speed);
+
+      // Fire tint for DK arrows
+      if (isFireArrow) {
+        arrow.setTint(0xff6600);
+      }
+
+      this.time.delayedCall(2000, () => { if (arrow.active) arrow.destroy(); });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1631,10 +1681,10 @@ export class GameScene extends Phaser.Scene {
     this.playSfx('dash');
 
     const angle = Math.atan2(vy, vx);
-    const dashSpeed = this.playerClass === 'rogue' ? 800 : 600;
-    const dashDuration = this.playerClass === 'rogue' ? 180 : 200;
+    const dashSpeed = this.playerClass === 'rogue' ? 800 : this.playerClass === 'warrior' ? 650 : 700;
+    const dashDuration = this.playerClass === 'rogue' ? 180 : this.playerClass === 'warrior' ? 220 : 200;
 
-    this.invincible = this.playerClass === 'rogue' ? 500 : 350;
+    this.invincible = this.playerClass === 'rogue' ? 500 : this.playerClass === 'warrior' ? 450 : 400;
 
     // Rogue shadow step — teleport behind nearest enemy (uses physics so walls block)
     if (this.playerClass === 'rogue') {
@@ -1690,18 +1740,23 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Normal dash — use physics velocity (walls will block!)
-    // Dash trail effects using magic sprites
-    const trailColor = this.playerClass === 'dark-knight' ? 0xef4444 : 0x60a5fa;
-    const trailEffect = this.playerClass === 'dark-knight' ? 'fire-ball' : 'wind-fx';
-    for (let i = 0; i < 3; i++) {
-      this.time.delayedCall(i * 50, () => {
-        this.playMagicEffect(trailEffect, this.player.x, this.player.y, 45);
-      });
+    // Class-specific dash trail effects (kept lean for performance)
+    if (this.playerClass === 'warrior') {
+      this.playMagicEffect('earth-spike', this.player.x, this.player.y, 60);
+      this.time.delayedCall(80, () => this.playMagicEffect('rocks-fx', this.player.x, this.player.y, 50));
+    } else if (this.playerClass === 'dark-knight') {
+      const fx = this.playMagicEffect('fire-ball', this.player.x, this.player.y, 55);
+      if (fx) fx.setRotation(angle);
+      this.time.delayedCall(80, () => this.playMagicEffect('explosion', this.player.x, this.player.y, 45));
+    } else {
+      this.playMagicEffect('wind-fx', this.player.x, this.player.y, 50);
+      this.time.delayedCall(80, () => this.playMagicEffect('wind-fx', this.player.x, this.player.y, 40));
     }
 
     // Dash attack: damage enemies we pass through
-    const dashDmg = Math.floor((this.playerDamage + this.equipBonusDamage) * 0.8);
-    const dashHitRadius = 50;
+    const dashDmgMul = this.playerClass === 'warrior' ? 1.2 : this.playerClass === 'dark-knight' ? 1.0 : 0.8;
+    const dashDmg = Math.floor((this.playerDamage + this.equipBonusDamage) * dashDmgMul);
+    const dashHitRadius = this.playerClass === 'warrior' ? 60 : 50;
     const hitEnemies = new Set<Phaser.Physics.Arcade.Sprite>();
     
     // Check for enemies hit during dash (multiple checks during dash)
@@ -1721,8 +1776,9 @@ export class GameScene extends Phaser.Scene {
             e.setTint(0xff4444);
             
             // Damage number
+            const dashDmgColor = this.playerClass === 'dark-knight' ? '#ef4444' : this.playerClass === 'warrior' ? '#fbbf24' : '#a855f7';
             const dt = this.add.text(e.x, e.y - 30, `-${dashDmg}`, {
-              fontSize: '18px', color: trailColor === 0xef4444 ? '#ef4444' : '#60a5fa',
+              fontSize: '18px', color: dashDmgColor,
               fontStyle: 'bold', stroke: '#000', strokeThickness: 3
             }).setOrigin(0.5).setDepth(100);
             this.tweens.add({ targets: dt, y: dt.y - 30, alpha: 0, duration: 500, onComplete: () => dt.destroy() });
@@ -1761,10 +1817,11 @@ export class GameScene extends Phaser.Scene {
       Math.sin(angle) * dashSpeed
     );
 
-    // Reset velocity after dash duration
+    // Reset velocity after dash duration and snap out of walls
     this.time.delayedCall(dashDuration, () => {
       if (!this.gameOver) {
         this.player.setVelocity(0, 0);
+        this.snapPlayerOutOfWalls();
       }
     });
   }
@@ -1773,30 +1830,39 @@ export class GameScene extends Phaser.Scene {
   // AREA ATTACK (E)
   // ═══════════════════════════════════════════════════════════════════════════
   private areaAttack() {
-    const radius = this.playerClass === 'warrior' ? 200 : this.playerClass === 'dark-knight' ? 160 : 140;
-    const areaDmg = Math.floor((this.playerDamage + this.equipBonusDamage) * (this.playerClass === 'rogue' ? 2.0 : 1.5));
+    const radius = this.playerClass === 'warrior' ? 220 : this.playerClass === 'dark-knight' ? 190 : 140;
+    const areaMul = this.playerClass === 'warrior' ? 2.0 : this.playerClass === 'dark-knight' ? 1.8 : 1.5;
+    const areaDmg = Math.floor((this.playerDamage + this.equipBonusDamage) * areaMul);
 
     // Class-specific visual effects
     if (this.playerClass === 'warrior') {
-      // Shield slam — earth spike + rocks + golden shockwave + brief invincibility
-      this.invincible = Math.max(this.invincible, 600);
-      this.playMagicEffect('earth-spike', this.player.x, this.player.y, 120);
-      this.playMagicEffect('rocks-fx', this.player.x, this.player.y, 100);
+      // Shield slam — earth spike + rocks + golden shockwave + invincibility + self-heal
+      this.invincible = Math.max(this.invincible, 1000);
+      // Heal 10% max HP on slam
+      const healAmt = Math.floor((this.maxHP + this.equipBonusHP) * 0.1);
+      this.playerHP = Math.min(this.playerHP + healAmt, this.maxHP + this.equipBonusHP);
+      const ht = this.add.text(this.player.x, this.player.y - 30, `+${healAmt}`, {
+        fontSize: '18px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+      }).setOrigin(0.5).setDepth(100);
+      this.tweens.add({ targets: ht, y: ht.y - 35, alpha: 0, duration: 800, onComplete: () => ht.destroy() });
+
+      this.playMagicEffect('earth-spike', this.player.x, this.player.y, 130);
+      this.playMagicEffect('rocks-fx', this.player.x, this.player.y, 110);
       // Shield glow ring
       const ring1 = this.add.circle(this.player.x, this.player.y, 30, 0xfacc15, 0.6).setDepth(99);
       this.tweens.add({ targets: ring1, scale: radius / 30, alpha: 0, duration: 500, onComplete: () => ring1.destroy() });
       // Shield shimmer on player
-      const shield = this.add.circle(this.player.x, this.player.y, 40, 0x22c55e, 0.3).setDepth(99);
-      this.tweens.add({ targets: shield, scale: 1.5, alpha: 0, duration: 600, onComplete: () => shield.destroy() });
+      const shield = this.add.circle(this.player.x, this.player.y, 45, 0x22c55e, 0.4).setDepth(99);
+      this.tweens.add({ targets: shield, scale: 1.8, alpha: 0, duration: 700, onComplete: () => shield.destroy() });
     } else if (this.playerClass === 'dark-knight') {
-      // Fire eruption — fireballs + explosion
-      this.playMagicEffect('explosion', this.player.x, this.player.y, 100);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        this.playMagicEffect('fire-ball', this.player.x + Math.cos(a) * 60, this.player.y + Math.sin(a) * 60, 60);
+      // Fire eruption — explosion + fireballs around player
+      this.playMagicEffect('explosion', this.player.x, this.player.y, 120);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        this.playMagicEffect('fire-ball', this.player.x + Math.cos(a) * 60, this.player.y + Math.sin(a) * 60, 65);
       }
-      const ring = this.add.circle(this.player.x, this.player.y, radius, 0xff4400, 0.3).setDepth(99);
-      this.tweens.add({ targets: ring, alpha: 0, scale: 1.3, duration: 500, onComplete: () => ring.destroy() });
+      const ring = this.add.circle(this.player.x, this.player.y, radius, 0xff4400, 0.35).setDepth(99);
+      this.tweens.add({ targets: ring, alpha: 0, scale: 1.4, duration: 600, onComplete: () => ring.destroy() });
     } else {
       // Rogue — wind blade flurry + tornado
       this.playMagicEffect('tornado-fx', this.player.x, this.player.y, 90);
@@ -1822,11 +1888,12 @@ export class GameScene extends Phaser.Scene {
         hp -= areaDmg;
         enemy.setData('hp', hp);
 
-        this.applyElement(enemy, this.playerElement);
+        // Apply element — DK always burns on area
+        this.applyElement(enemy, this.playerClass === 'dark-knight' ? 'fire' : this.playerElement);
 
-        // Strong knockback
+        // Strong knockback — Warrior has massive knockback
         const kbAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
-        const kbForce = this.playerClass === 'warrior' ? 500 : 350;
+        const kbForce = this.playerClass === 'warrior' ? 600 : 350;
         enemy.setVelocity(Math.cos(kbAngle) * kbForce, Math.sin(kbAngle) * kbForce);
 
         const kind = enemy.getData('kind') as EnemyKind;
@@ -1940,12 +2007,29 @@ export class GameScene extends Phaser.Scene {
   // ENEMY DEATH
   // ═══════════════════════════════════════════════════════════════════════════
   private handleEnemyDeath(enemy: Phaser.Physics.Arcade.Sprite) {
+    // Guard: prevent double-counting if multiple hits kill on same frame
+    if (enemy.getData('dead')) return;
+    enemy.setData('dead', true);
+
     const kind = enemy.getData('kind') as EnemyKind | BossKind;
     const isBoss = enemy.getData('isBoss') || false;
     this.totalKills++;
     if (isBoss) this.bossesKilled++;
 
     this.playSfx('kill');
+
+    // Class passive on kill: DK lifesteal, Warrior sustain
+    if (this.playerClass === 'dark-knight') {
+      const heal = Math.floor((this.maxHP + this.equipBonusHP) * 0.08);
+      this.playerHP = Math.min(this.playerHP + heal, this.maxHP + this.equipBonusHP);
+      const ht = this.add.text(this.player.x, this.player.y - 25, `+${heal}`, {
+        fontSize: '14px', color: '#ef4444', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(100);
+      this.tweens.add({ targets: ht, y: ht.y - 25, alpha: 0, duration: 600, onComplete: () => ht.destroy() });
+    } else if (this.playerClass === 'warrior') {
+      const heal = Math.floor((this.maxHP + this.equipBonusHP) * 0.05);
+      this.playerHP = Math.min(this.playerHP + heal, this.maxHP + this.equipBonusHP);
+    }
 
     // Combo
     const now = Date.now();
@@ -2197,8 +2281,11 @@ export class GameScene extends Phaser.Scene {
     }
     const pu = types[idx]!;
 
-    const pickup = this.powerUpPickups.create(x, y, undefined);
-    const vis = this.add.star(0, 0, 6, 7, 13, pu.color).setStrokeStyle(2, 0xffffff);
+    const pickup = this.powerUpPickups.create(x, y, '__DEFAULT') as Phaser.Physics.Arcade.Sprite;
+    pickup.setVisible(false);
+    pickup.body!.setSize(26, 26);
+    (pickup.body as Phaser.Physics.Arcade.Body).setOffset(-13, -13);
+    const vis = this.add.star(0, 0, 6, 7, 13, pu.color).setStrokeStyle(2, 0xffffff).setDepth(15);
     pickup.setData('visual', vis);
     pickup.setData('type', pu.type);
     pickup.setData('duration', pu.duration);
@@ -2297,46 +2384,55 @@ export class GameScene extends Phaser.Scene {
     const classLabel = this.playerClass === 'warrior' ? '⚔️ Warrior' : this.playerClass === 'rogue' ? '🗡️ Rogue' : '🔥 Dark Knight';
     this.classText.setText(`${classLabel}  |  ${dashStr}  |  ${areaStr}`);
 
-    // Clean up old power-up icon sprites
-    this.powerUpIconSprites.forEach(s => s.destroy());
-    this.powerUpIconSprites = [];
-
-    // Power-up icons with magic icon sprites + countdown arc
-    const iconMap: Record<string, number> = {
-      speed: 0, shield: 1, damage: 2, attackSpeed: 3, lifeSteal: 4,
-      multiShot: 5, magnet: 6, freeze: 7
-    };
-    const iconTints: Record<string, number> = {
-      speed: 0xffff00, shield: 0x00ff88, damage: 0xff4444, attackSpeed: 0xff8800,
-      lifeSteal: 0x44ff44, multiShot: 0x44aaff, magnet: 0xaa44ff, freeze: 0x44ffff
-    };
-    let iconIdx = 0;
-    const iconBaseX = 185;
-    const iconBaseY = 589;
+    // Power-up icons — only rebuild when set changes, just update countdown text otherwise
+    const currentKeys = Array.from(this.activePowerUps.keys()).sort().join(',');
+    if (currentKeys !== (this as any)._lastPowerUpKeys) {
+      (this as any)._lastPowerUpKeys = currentKeys;
+      // Rebuild icons
+      this.powerUpIconSprites.forEach(s => s.destroy());
+      this.powerUpIconSprites = [];
+      const iconMap: Record<string, number> = {
+        speed: 0, shield: 1, damage: 2, attackSpeed: 3, lifeSteal: 4,
+        multiShot: 5, magnet: 6, freeze: 7
+      };
+      const iconTints: Record<string, number> = {
+        speed: 0xffff00, shield: 0x00ff88, damage: 0xff4444, attackSpeed: 0xff8800,
+        lifeSteal: 0x44ff44, multiShot: 0x44aaff, magnet: 0xaa44ff, freeze: 0x44ffff
+      };
+      let iconIdx = 0;
+      const iconBaseX = 185, iconBaseY = 589;
+      this.activePowerUps.forEach((_time, type) => {
+        const iconNum = iconMap[type] ?? 9;
+        const iconKey = `magic-icon-${iconNum}`;
+        if (this.textures.exists(iconKey)) {
+          const ix = iconBaseX + iconIdx * 34;
+          const bg = this.add.circle(ix, iconBaseY, 15, 0x000000, 0.4).setDepth(1003).setScrollFactor(0);
+          this.powerUpIconSprites.push(bg);
+          const icon = this.add.image(ix, iconBaseY, iconKey)
+            .setDisplaySize(26, 26).setDepth(1004).setScrollFactor(0)
+            .setTint(iconTints[type] || 0xffffff);
+          this.powerUpIconSprites.push(icon);
+          const label = this.add.text(ix, iconBaseY + 15, '', {
+            fontSize: '9px', color: '#fff', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
+          }).setOrigin(0.5).setDepth(1004).setScrollFactor(0);
+          label.setData('puType', type);
+          this.powerUpIconSprites.push(label);
+          iconIdx++;
+        }
+      });
+    }
+    // Update countdown labels (cheap — just setText on existing objects)
     const abilInfo: string[] = [];
+    this.powerUpIconSprites.forEach(s => {
+      if (s instanceof Phaser.GameObjects.Text && s.getData('puType')) {
+        const t = this.activePowerUps.get(s.getData('puType'));
+        (s as Phaser.GameObjects.Text).setText(t ? `${Math.ceil(t / 1000)}s` : '');
+      }
+    });
+    // Fallback text for icons without textures
     this.activePowerUps.forEach((time, type) => {
-      const iconNum = iconMap[type] ?? 9;
-      const iconKey = `magic-icon-${iconNum}`;
-      if (this.textures.exists(iconKey)) {
-        // Icon sprite
-        const ix = iconBaseX + iconIdx * 34;
-        const icon = this.add.image(ix, iconBaseY, iconKey)
-          .setDisplaySize(26, 26).setDepth(1004).setScrollFactor(0)
-          .setTint(iconTints[type] || 0xffffff);
-        this.powerUpIconSprites.push(icon);
-
-        // Countdown background circle
-        const bg = this.add.circle(ix, iconBaseY, 15, 0x000000, 0.4).setDepth(1003).setScrollFactor(0);
-        this.powerUpIconSprites.push(bg);
-
-        // Time label
-        const label = this.add.text(ix, iconBaseY + 15, `${Math.ceil(time / 1000)}s`, {
-          fontSize: '9px', color: '#fff', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
-        }).setOrigin(0.5).setDepth(1004).setScrollFactor(0);
-        this.powerUpIconSprites.push(label);
-
-        iconIdx++;
-      } else {
+      const iconKey = `magic-icon-${({speed:0,shield:1,damage:2,attackSpeed:3,lifeSteal:4,multiShot:5,magnet:6,freeze:7}[type] ?? 9)}`;
+      if (!this.textures.exists(iconKey)) {
         const icons: Record<string, string> = { speed: '⚡', shield: '🛡️', damage: '💥', attackSpeed: '⚔️', lifeSteal: '💚', multiShot: '🎯', magnet: '🧲', freeze: '❄️' };
         abilInfo.push(`${icons[type] || '✨'} ${(time / 1000).toFixed(0)}s`);
       }
@@ -2356,10 +2452,31 @@ export class GameScene extends Phaser.Scene {
   private handlePlayerEnemyCollision(player: any, enemy: any) {
     if (!player || !enemy) return;
     const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, player.x, player.y);
-    // Push player away from enemy to prevent overlap
-    this.player.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
+    // Push player away from enemy to prevent overlap (reduced speed to avoid tunneling)
+    this.player.setVelocity(Math.cos(angle) * 150, Math.sin(angle) * 150);
     // Also push enemy slightly back
-    enemy.setVelocity(Math.cos(angle + Math.PI) * 80, Math.sin(angle + Math.PI) * 80);
+    enemy.setVelocity(Math.cos(angle + Math.PI) * 60, Math.sin(angle + Math.PI) * 60);
+    // Schedule a wall-overlap correction after a short delay
+    this.time.delayedCall(80, () => this.snapPlayerOutOfWalls());
+  }
+
+  /** If the player is overlapping a wall, snap them to the nearest floor tile */
+  private snapPlayerOutOfWalls() {
+    if (!this.player || !this.player.active) return;
+    const px = this.player.x, py = this.player.y;
+    const gx = Math.floor(px / 64);
+    const gy = Math.floor(py / 64);
+    if (gx < 0 || gx > 9 || gy < 0 || gy > 9 || this.tileGrid[gy * 10 + gx] === '0') {
+      // Player is inside a wall — snap to nearest floor tile
+      let bestTile = this.floorTiles[0]!;
+      let bestDist = Infinity;
+      this.floorTiles.forEach(ft => {
+        const d = Phaser.Math.Distance.Between(px, py, ft.x, ft.y);
+        if (d < bestDist) { bestDist = d; bestTile = ft; }
+      });
+      this.player.setPosition(bestTile.x, bestTile.y);
+      this.player.setVelocity(0, 0);
+    }
   }
 
   private handleDeath() {
@@ -2455,6 +2572,9 @@ export class GameScene extends Phaser.Scene {
       this.createShareButton(cx, cy + 135, this.score, this.currentWave, false);
     });
 
+    // Submit score and show rank
+    this.submitScoreToServer(false, cx, cy + 160);
+
     if (this.onGameOverCallback) {
       this.onGameOverCallback(this.score, Math.floor(this.player.x / 64), Math.floor(this.player.y / 64));
     }
@@ -2542,6 +2662,9 @@ export class GameScene extends Phaser.Scene {
       this.createShareButton(cx, cy + 105, this.score, this.currentWave, true);
     });
 
+    // Submit score and show rank
+    this.submitScoreToServer(true, cx, cy + 130);
+
     if (this.onVictoryCallback) this.onVictoryCallback(this.score);
   }
 
@@ -2625,13 +2748,20 @@ export class GameScene extends Phaser.Scene {
       if (!res.ok) return;
       const data = await res.json();
       data.ghosts?.forEach((g: any) => {
+        // Ghost marker — small translucent circle where players died
         const gs = this.add.circle(g.x * 64 + 32, g.y * 64 + 32, 10, 0xc4b5fd, 0.35);
         gs.setDepth(3);
         this.ghosts.add(gs);
         this.tweens.add({ targets: gs, y: gs.y - 8, yoyo: true, duration: 2000, repeat: -1, ease: 'Sine.easeInOut' });
+
+        // Ghost username label
+        const label = this.add.text(g.x * 64 + 32, g.y * 64 + 12, g.username || '💀', {
+          fontSize: '8px', color: '#c4b5fd', stroke: '#000', strokeThickness: 2
+        }).setOrigin(0.5).setDepth(3).setAlpha(0.5);
+        this.ghosts.add(label);
       });
-    } catch (err) {
-      console.error('Failed to fetch ghosts:', err);
+    } catch (_err) {
+      // Ghosts are optional — game works without backend
     }
   }
 
@@ -3003,7 +3133,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       // Boss dust trail (small particles behind the boss while moving)
-      if (Math.random() < (this.bossPhase === 2 ? 0.15 : 0.08)) {
+      if (Math.random() < (this.bossPhase === 2 ? 0.08 : 0.04)) {
         const dustX = boss.x + Phaser.Math.Between(-10, 10);
         const dustY = boss.y + 20;
         const dust = this.add.circle(dustX, dustY, Phaser.Math.Between(3, 6), 0xaa8855, 0.5).setDepth(8);
@@ -3118,7 +3248,7 @@ export class GameScene extends Phaser.Scene {
               callback: () => {
                 const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, tile.x, tile.y);
                 if (d < 50 && this.invincible <= 0) {
-                  this.playerHP -= 5;
+                  this.playerHP -= 10;
                   this.invincible = 300;
                 }
               }
@@ -3222,6 +3352,7 @@ export class GameScene extends Phaser.Scene {
   private spawnBossProjectile(boss: Phaser.Physics.Arcade.Sprite, angle: number, effectName: string, speed: number) {
     const proj = this.physics.add.sprite(boss.x, boss.y, `${effectName}-1`).setDisplaySize(48, 48).setDepth(12);
     if (this.anims.exists(`${effectName}-anim`)) proj.play(`${effectName}-anim`);
+    proj.setRotation(angle);  // Rotate sprite to face movement direction
     proj.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
 
     // Boss projectile damages player
@@ -3434,6 +3565,48 @@ export class GameScene extends Phaser.Scene {
     }
     else {
       this.vignetteOverlay.setAlpha(0);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SCORE SUBMISSION & RANK DISPLAY
+  // ═══════════════════════════════════════════════════════════════════════════
+  private async submitScoreToServer(survived: boolean, labelX: number, labelY: number) {
+    try {
+      const body: any = {
+        score: this.score,
+        survived,
+      };
+      if (!survived) {
+        body.deathPosition = {
+          x: Math.floor(this.player.x / 64),
+          y: Math.floor(this.player.y / 64)
+        };
+      }
+      const res = await fetch('/api/submit-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Show rank on screen
+        if (data.rank) {
+          const rankText = this.add.text(labelX, labelY, `🏅 Rank #${data.rank}`, {
+            fontSize: '14px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+          }).setOrigin(0.5).setDepth(2003).setScrollFactor(0).setAlpha(0);
+          this.tweens.add({ targets: rankText, alpha: 1, duration: 300, delay: 200 });
+        }
+        // Show streak
+        if (data.streak?.isNewDay) {
+          const streakText = this.add.text(labelX, labelY + 20, `🔥 ${data.streak.current} Day Streak!`, {
+            fontSize: '12px', color: '#f97316', stroke: '#000', strokeThickness: 2
+          }).setOrigin(0.5).setDepth(2003).setScrollFactor(0).setAlpha(0);
+          this.tweens.add({ targets: streakText, alpha: 1, duration: 300, delay: 400 });
+        }
+      }
+    } catch (_err) {
+      // Score submission is best-effort; game works offline
     }
   }
 

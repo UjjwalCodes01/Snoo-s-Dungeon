@@ -44,14 +44,12 @@ export const useDailyContent = () => {
         loading: false,
         error: null,
       });
-    } catch (err) {
-      console.error('Failed to fetch daily dungeon:', err);
-      
-      // Use defaults on error
+    } catch (_err) {
+      // Use defaults when backend is unavailable (local dev or offline)
       setState(prev => ({
         ...prev,
         loading: false,
-        error: 'Failed to load dungeon. Using default layout.',
+        error: null, // Don't show error banner — default layout works fine
       }));
     }
   }, []);

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { LeaderboardResponse, LeaderboardEntry } from '../../shared/types/api';
 
 // Animated number component
@@ -120,6 +120,7 @@ export function Leaderboard() {
   const [error, setError] = useState<string | null>(null);
   const [, setLastUpdate] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const failCountRef = useRef(0);
 
   const fetchLeaderboard = useCallback(async (showRefresh = false) => {
     if (showRefresh) setIsRefreshing(true);
@@ -130,9 +131,13 @@ export function Leaderboard() {
       setData(leaderboard);
       setLastUpdate(new Date());
       setError(null);
+      failCountRef.current = 0;
     } catch (err) {
-      console.error('Failed to fetch leaderboard:', err);
-      setError('Failed to load leaderboard');
+      failCountRef.current++;
+      if (failCountRef.current <= 2) {
+        console.warn('Leaderboard unavailable (attempt', failCountRef.current + ')');
+      }
+      setError(failCountRef.current > 3 ? null : 'Leaderboard loading...');
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -141,7 +146,11 @@ export function Leaderboard() {
 
   useEffect(() => {
     fetchLeaderboard();
-    const interval = setInterval(() => fetchLeaderboard(true), 30000);
+    // Poll every 30s, but back off if server is unavailable
+    const interval = setInterval(() => {
+      if (failCountRef.current > 3) return; // Stop polling after repeated failures
+      fetchLeaderboard(true);
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchLeaderboard]);
 
@@ -162,18 +171,23 @@ export function Leaderboard() {
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
-      <div className="bg-gradient-to-br from-red-900/50 to-gray-900 rounded-2xl p-6 border border-red-500/30">
-        <p className="text-red-300 text-sm flex items-center gap-2">
-          <span>⚠️</span> {error}
-        </p>
-        <button 
-          onClick={() => fetchLeaderboard(true)}
-          className="mt-3 text-sm text-orange-400 hover:text-orange-300 transition-colors"
-        >
-          Try again →
-        </button>
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 border border-gray-700/50">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-2xl">🏆</span>
+          <h2 className="text-xl font-bold text-white">Leaderboard</h2>
+        </div>
+        <div className="text-center py-8">
+          <div className="text-4xl mb-3 opacity-40">📊</div>
+          <p className="text-gray-400 text-sm">{error}</p>
+          <button 
+            onClick={() => { failCountRef.current = 0; fetchLeaderboard(true); }}
+            className="mt-3 text-sm text-orange-400 hover:text-orange-300 transition-colors"
+          >
+            🔄 Retry
+          </button>
+        </div>
       </div>
     );
   }

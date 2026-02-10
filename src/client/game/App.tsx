@@ -19,8 +19,8 @@ const useStreak = () => {
           const data = await res.json();
           setStreak({ current: data.current, best: data.best, lastPlayed: data.lastPlayed });
         }
-      } catch (err) {
-        console.error('Failed to fetch streak:', err);
+      } catch (_err) {
+        // Streak is optional; works without backend
       }
     };
     fetchStreak();

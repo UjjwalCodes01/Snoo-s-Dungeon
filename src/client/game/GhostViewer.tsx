@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { GhostsResponse, GhostPosition } from '../../shared/types/api';
 
 // Floating ghost animation component
@@ -32,6 +32,7 @@ export function GhostViewer() {
   const [data, setData] = useState<GhostsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDeaths, setShowDeaths] = useState(false);
+  const failCountRef = useRef(0);
 
   useEffect(() => {
     const fetchGhosts = async () => {
@@ -40,16 +41,23 @@ export function GhostViewer() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const ghosts: GhostsResponse = await res.json();
         setData(ghosts);
-      } catch (err) {
-        console.error('Failed to fetch ghosts:', err);
+        failCountRef.current = 0;
+      } catch (_err) {
+        failCountRef.current++;
+        if (failCountRef.current <= 2) {
+          console.warn('Ghosts API unavailable');
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchGhosts();
-    // Refresh every minute
-    const interval = setInterval(fetchGhosts, 60000);
+    // Refresh every minute, but back off if unavailable
+    const interval = setInterval(() => {
+      if (failCountRef.current > 3) return;
+      fetchGhosts();
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
