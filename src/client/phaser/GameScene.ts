@@ -198,6 +198,8 @@ export class GameScene extends Phaser.Scene {
   private teleportTiles: { x: number; y: number; sprite: Phaser.GameObjects.Sprite }[] = [];
   private teleportCooldown = 0;
 
+  // ── Power-up Icon Display ──
+  private powerUpIconSprites: Phaser.GameObjects.GameObject[] = [];
   // ── Mobile touch ──
   private isMobile = false;
   private touchJoystick?: { 
@@ -676,8 +678,12 @@ export class GameScene extends Phaser.Scene {
     const hudY = 565;
     const hudH = 75;
 
-    // HUD background
-    this.add.rectangle(0, hudY, 640, hudH, 0x0f0f1e, 0.92).setOrigin(0, 0).setDepth(999).setScrollFactor(0);
+    // HUD background — use Artwork background if available
+    if (this.textures.exists('ui-bg')) {
+      this.add.image(320, hudY + hudH / 2, 'ui-bg').setDisplaySize(640, hudH).setDepth(999).setScrollFactor(0).setAlpha(0.92);
+    } else {
+      this.add.rectangle(0, hudY, 640, hudH, 0x0f0f1e, 0.92).setOrigin(0, 0).setDepth(999).setScrollFactor(0);
+    }
 
     // Top accent bar with class color
     const classColors: Record<PlayerClass, number> = { warrior: 0x22c55e, rogue: 0xa855f7, 'dark-knight': 0xef4444 };
@@ -690,41 +696,46 @@ export class GameScene extends Phaser.Scene {
     const hpBar = this.add.rectangle(12, hudY + 10, 160, 16, 0x22c55e).setOrigin(0, 0).setDepth(1001).setScrollFactor(0);
     this.player.setData('hpBar', hpBar);
 
+    // HP bar frame overlay (Artwork)
+    if (this.textures.exists('ui-bar-h')) {
+      this.add.image(92, hudY + 18, 'ui-bar-h').setDisplaySize(168, 22).setDepth(1002).setScrollFactor(0).setAlpha(0.9);
+    }
+
     this.hpText = this.add.text(92, hudY + 18, '', {
       fontSize: '12px', color: '#ffffff', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
-    }).setOrigin(0.5).setDepth(1002).setScrollFactor(0);
+    }).setOrigin(0.5).setDepth(1003).setScrollFactor(0);
 
     // Class label
     const classIcons: Record<PlayerClass, string> = { warrior: '⚔️', rogue: '🗡️', 'dark-knight': '🔥' };
     this.classText = this.add.text(12, hudY + 30, `${classIcons[this.playerClass]} ${this.playerClass.toUpperCase()}`, {
       fontSize: '11px', color: '#ccc', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
-    }).setOrigin(0, 0).setDepth(1002).setScrollFactor(0);
+    }).setOrigin(0, 0).setDepth(1003).setScrollFactor(0);
 
     // Controls bar
     const controlsY = hudY + 48;
     this.add.text(12, controlsY, 'WASD Move  |  SPACE Attack  |  SHIFT Dash  |  E Area  |  Q Arrow  |  R Restart', {
       fontSize: '9px', color: '#777', stroke: '#000', strokeThickness: 1
-    }).setOrigin(0, 0).setDepth(1002).setScrollFactor(0);
+    }).setOrigin(0, 0).setDepth(1003).setScrollFactor(0);
 
     // Score
     this.scoreText = this.add.text(628, hudY + 8, '', {
       fontSize: '18px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 3, align: 'right'
-    }).setOrigin(1, 0).setDepth(1002).setScrollFactor(0);
+    }).setOrigin(1, 0).setDepth(1003).setScrollFactor(0);
 
     // Wave
     this.waveText = this.add.text(628, hudY + 28, '', {
       fontSize: '14px', color: '#60a5fa', fontStyle: 'bold', stroke: '#000', strokeThickness: 3, align: 'right'
-    }).setOrigin(1, 0).setDepth(1002).setScrollFactor(0);
+    }).setOrigin(1, 0).setDepth(1003).setScrollFactor(0);
 
     // Equipment display
     this.equipText = this.add.text(185, hudY + 8, '', {
       fontSize: '10px', color: '#d4d4d4', stroke: '#000', strokeThickness: 2
-    }).setOrigin(0, 0).setDepth(1002).setScrollFactor(0);
+    }).setOrigin(0, 0).setDepth(1003).setScrollFactor(0);
 
-    // Abilities / power-ups
+    // Abilities / power-ups text (fallback, icons drawn in updateHUD)
     this.abilitiesText = this.add.text(185, hudY + 24, '', {
       fontSize: '11px', color: '#a78bfa', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
-    }).setOrigin(0, 0).setDepth(1002).setScrollFactor(0);
+    }).setOrigin(0, 0).setDepth(1003).setScrollFactor(0);
 
     // Combo text (floating, centered on screen)
     this.comboText = this.add.text(320, 60, '', {
@@ -949,16 +960,12 @@ export class GameScene extends Phaser.Scene {
       const py = gy * tileSize + tileSize / 2;
 
       if (tile === '0') {
-        const wall = this.walls.create(px, py, undefined) as Phaser.Physics.Arcade.Sprite;
-        wall.setOrigin(0.5).setDisplaySize(tileSize, tileSize);
-        (wall.body as Phaser.Physics.Arcade.StaticBody).setSize(tileSize, tileSize);
-        (wall.body as Phaser.Physics.Arcade.StaticBody).setOffset(0, 0);
-        (wall as any).refreshBody();
-        wall.setDepth(5);
-
-        if (this.textures.exists('wood-wall')) {
-          this.add.image(px, py, 'wood-wall').setOrigin(0.5).setDisplaySize(tileSize, tileSize).setDepth(5).setTint(0x9b7f57);
-        }
+        const wall = this.walls.create(px, py, 'wood-wall') as Phaser.Physics.Arcade.Sprite;
+        wall.setOrigin(0.5).setDisplaySize(tileSize, tileSize).setTint(0x9b7f57);
+        const body = wall.body as Phaser.Physics.Arcade.StaticBody;
+        body.setSize(tileSize, tileSize);
+        body.updateFromGameObject();
+        wall.setDepth(5).setAlpha(this.textures.exists('wood-wall') ? 1 : 0);
       } else if (tile === 'T' || tile === 't') {
         // Teleport tile — render floor + portal on top
         if (this.textures.exists('grass-tiles')) {
@@ -1414,13 +1421,27 @@ export class GameScene extends Phaser.Scene {
       this.playSfx('boss');
     });
 
-    // 5) Boss title text
+    // 5) Boss title card with artwork panel
     const titleColor = bossKind === 'pink' ? '#ff69b4' : bossKind === 'owlet' ? '#60a5fa' : '#f59e0b';
+    const titleParts: Phaser.GameObjects.GameObject[] = [];
+    const cardW = 340, cardH = 80;
+    if (this.textures.exists('ui-bg')) {
+      const cardBg = this.add.image(320, 290, 'ui-bg').setDisplaySize(cardW, cardH).setDepth(1004).setScrollFactor(0).setAlpha(0);
+      titleParts.push(cardBg);
+      this.tweens.add({ targets: cardBg, alpha: 0.9, duration: 300 });
+      this.tweens.add({ targets: cardBg, alpha: 0, duration: 800, delay: 2500, onComplete: () => cardBg.destroy() });
+    }
+    if (this.textures.exists('ui-border')) {
+      const cardBorder = this.add.image(320, 290, 'ui-border').setDisplaySize(cardW + 6, cardH + 6).setDepth(1004).setScrollFactor(0).setAlpha(0);
+      titleParts.push(cardBorder);
+      this.tweens.add({ targets: cardBorder, alpha: 0.7, duration: 300 });
+      this.tweens.add({ targets: cardBorder, alpha: 0, duration: 800, delay: 2500, onComplete: () => cardBorder.destroy() });
+    }
     const label = this.add.text(320, 280, `${template.emoji} ${template.title} ${template.emoji}`, {
       fontSize: '36px', color: titleColor, fontStyle: 'bold', stroke: '#000', strokeThickness: 6
     }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
     if (enraged) {
-      const enragedLabel = this.add.text(320, 320, '⚠️ ENRAGED ⚠️', {
+      const enragedLabel = this.add.text(320, 310, '⚠️ ENRAGED ⚠️', {
         fontSize: '20px', color: '#ef4444', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
       }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
       this.tweens.add({ targets: enragedLabel, alpha: 0, y: 300, duration: 3000, delay: 1500, onComplete: () => enragedLabel.destroy() });
@@ -1629,16 +1650,20 @@ export class GameScene extends Phaser.Scene {
         // Purple vanish effect — portal at start position
         this.playMagicEffect('portal-fx', this.player.x, this.player.y, 80);
 
-        // Teleport behind the closest enemy
+        // Teleport behind the closest enemy — find a valid floor tile near the target
         const cx = (closest as Phaser.Physics.Arcade.Sprite).x;
         const cy = (closest as Phaser.Physics.Arcade.Sprite).y;
         const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, cx, cy);
         const behindX = cx + Math.cos(awayAngle + Math.PI) * 60;
         const behindY = cy + Math.sin(awayAngle + Math.PI) * 60;
-        this.player.setPosition(
-          Phaser.Math.Clamp(behindX, 40, 600),
-          Phaser.Math.Clamp(behindY, 40, 560)
-        );
+        // Find the nearest floor tile to the desired position (avoids landing inside walls)
+        let bestTile = this.floorTiles[0]!;
+        let bestDist = Infinity;
+        this.floorTiles.forEach(ft => {
+          const d = Phaser.Math.Distance.Between(behindX, behindY, ft.x, ft.y);
+          if (d < bestDist) { bestDist = d; bestTile = ft; }
+        });
+        this.player.setPosition(bestTile.x, bestTile.y);
 
         // Appear effect — portal at destination
         this.playMagicEffect('portal-fx', this.player.x, this.player.y, 70);
@@ -1989,9 +2014,13 @@ export class GameScene extends Phaser.Scene {
   private handleBossDeath(boss: Phaser.Physics.Arcade.Sprite) {
     const bossKind = boss.getData('bossKind') as BossKind;
 
-    // 1) Slowmo effect
-    this.time.timeScale = 0.3;
-    this.time.delayedCall(600, () => { this.time.timeScale = 1; }); // Restore after ~2 real seconds
+    // 1) Slowmo effect — slow physics and tweens
+    this.physics.world.timeScale = 3;     // higher = slower (inverse of game speed)
+    this.tweens.timeScale = 0.3;
+    this.time.delayedCall(2000, () => {
+      this.physics.world.timeScale = 1;
+      this.tweens.timeScale = 1;
+    });
 
     // 2) Boss death animation
     const deathAnim = `boss-${bossKind}-death-anim`;
@@ -2268,10 +2297,49 @@ export class GameScene extends Phaser.Scene {
     const classLabel = this.playerClass === 'warrior' ? '⚔️ Warrior' : this.playerClass === 'rogue' ? '🗡️ Rogue' : '🔥 Dark Knight';
     this.classText.setText(`${classLabel}  |  ${dashStr}  |  ${areaStr}`);
 
+    // Clean up old power-up icon sprites
+    this.powerUpIconSprites.forEach(s => s.destroy());
+    this.powerUpIconSprites = [];
+
+    // Power-up icons with magic icon sprites + countdown arc
+    const iconMap: Record<string, number> = {
+      speed: 0, shield: 1, damage: 2, attackSpeed: 3, lifeSteal: 4,
+      multiShot: 5, magnet: 6, freeze: 7
+    };
+    const iconTints: Record<string, number> = {
+      speed: 0xffff00, shield: 0x00ff88, damage: 0xff4444, attackSpeed: 0xff8800,
+      lifeSteal: 0x44ff44, multiShot: 0x44aaff, magnet: 0xaa44ff, freeze: 0x44ffff
+    };
+    let iconIdx = 0;
+    const iconBaseX = 185;
+    const iconBaseY = 589;
     const abilInfo: string[] = [];
     this.activePowerUps.forEach((time, type) => {
-      const icons: Record<string, string> = { speed: '⚡', shield: '🛡️', damage: '💥', attackSpeed: '⚔️', lifeSteal: '💚', multiShot: '🎯', magnet: '🧲', freeze: '❄️' };
-      abilInfo.push(`${icons[type] || '✨'} ${(time / 1000).toFixed(0)}s`);
+      const iconNum = iconMap[type] ?? 9;
+      const iconKey = `magic-icon-${iconNum}`;
+      if (this.textures.exists(iconKey)) {
+        // Icon sprite
+        const ix = iconBaseX + iconIdx * 34;
+        const icon = this.add.image(ix, iconBaseY, iconKey)
+          .setDisplaySize(26, 26).setDepth(1004).setScrollFactor(0)
+          .setTint(iconTints[type] || 0xffffff);
+        this.powerUpIconSprites.push(icon);
+
+        // Countdown background circle
+        const bg = this.add.circle(ix, iconBaseY, 15, 0x000000, 0.4).setDepth(1003).setScrollFactor(0);
+        this.powerUpIconSprites.push(bg);
+
+        // Time label
+        const label = this.add.text(ix, iconBaseY + 15, `${Math.ceil(time / 1000)}s`, {
+          fontSize: '9px', color: '#fff', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
+        }).setOrigin(0.5).setDepth(1004).setScrollFactor(0);
+        this.powerUpIconSprites.push(label);
+
+        iconIdx++;
+      } else {
+        const icons: Record<string, string> = { speed: '⚡', shield: '🛡️', damage: '💥', attackSpeed: '⚔️', lifeSteal: '💚', multiShot: '🎯', magnet: '🧲', freeze: '❄️' };
+        abilInfo.push(`${icons[type] || '✨'} ${(time / 1000).toFixed(0)}s`);
+      }
     });
     this.abilitiesText.setText(abilInfo.join('  '));
 
@@ -2282,7 +2350,6 @@ export class GameScene extends Phaser.Scene {
     });
     this.equipText.setText(equipLines.join(' | '));
   }
-
   // ═══════════════════════════════════════════════════════════════════════════
   // COLLISION / DEATH / VICTORY
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2323,10 +2390,20 @@ export class GameScene extends Phaser.Scene {
     // Death explosion effect
     this.playMagicEffect('explosion', this.player.x, this.player.y, 120);
 
-    // Panel background
+    // Panel background — use Artwork sprites
     const panelW = 380, panelH = 340;
-    const panel = this.add.rectangle(cx, cy, panelW, panelH, 0x1a1a2e, 0.95).setDepth(2001).setScrollFactor(0)
-      .setStrokeStyle(3, 0xef4444);
+    if (this.textures.exists('ui-bg')) {
+      const panelBg = this.add.image(cx, cy, 'ui-bg').setDisplaySize(panelW, panelH).setDepth(2001).setScrollFactor(0).setAlpha(0.95);
+      panelBg.setScale(0);
+      this.tweens.add({ targets: panelBg, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
+    }
+    if (this.textures.exists('ui-border')) {
+      const panelBorder = this.add.image(cx, cy, 'ui-border').setDisplaySize(panelW + 10, panelH + 10).setDepth(2001).setScrollFactor(0).setAlpha(0.8);
+      panelBorder.setScale(0);
+      this.tweens.add({ targets: panelBorder, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
+    }
+    const panel = this.add.rectangle(cx, cy, panelW, panelH, 0x1a1a2e, this.textures.exists('ui-bg') ? 0 : 0.95).setDepth(2001).setScrollFactor(0)
+      .setStrokeStyle(this.textures.exists('ui-border') ? 0 : 3, 0xef4444);
     panel.setScale(0);
     this.tweens.add({ targets: panel, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
 
@@ -2415,10 +2492,20 @@ export class GameScene extends Phaser.Scene {
     overlay.setAlpha(0);
     this.tweens.add({ targets: overlay, alpha: 1, duration: 600 });
 
-    // Panel
+    // Panel — use Artwork UI
     const panelW = 400, panelH = 320;
-    const panel = this.add.rectangle(cx, cy, panelW, panelH, 0x0a1628, 0.95).setDepth(2001).setScrollFactor(0)
-      .setStrokeStyle(3, 0x22c55e);
+    if (this.textures.exists('ui-bg')) {
+      const panelBg = this.add.image(cx, cy, 'ui-bg').setDisplaySize(panelW, panelH).setDepth(2001).setScrollFactor(0).setAlpha(0.95);
+      panelBg.setScale(0);
+      this.tweens.add({ targets: panelBg, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
+    }
+    if (this.textures.exists('ui-border')) {
+      const panelBorder = this.add.image(cx, cy, 'ui-border').setDisplaySize(panelW + 10, panelH + 10).setDepth(2001).setScrollFactor(0).setAlpha(0.8);
+      panelBorder.setScale(0);
+      this.tweens.add({ targets: panelBorder, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
+    }
+    const panel = this.add.rectangle(cx, cy, panelW, panelH, 0x0a1628, this.textures.exists('ui-bg') ? 0 : 0.95).setDepth(2001).setScrollFactor(0)
+      .setStrokeStyle(this.textures.exists('ui-border') ? 0 : 3, 0x22c55e);
     panel.setScale(0);
     this.tweens.add({ targets: panel, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
 
@@ -2914,6 +3001,14 @@ export class GameScene extends Phaser.Scene {
       if (curAnim !== animKey && !curAnim?.includes('attack') && !curAnim?.includes('hurt') && !curAnim?.includes('throw') && !curAnim?.includes('jump')) {
         if (this.anims.exists(animKey)) boss.play(animKey, true);
       }
+
+      // Boss dust trail (small particles behind the boss while moving)
+      if (Math.random() < (this.bossPhase === 2 ? 0.15 : 0.08)) {
+        const dustX = boss.x + Phaser.Math.Between(-10, 10);
+        const dustY = boss.y + 20;
+        const dust = this.add.circle(dustX, dustY, Phaser.Math.Between(3, 6), 0xaa8855, 0.5).setDepth(8);
+        this.tweens.add({ targets: dust, alpha: 0, scale: 0.3, y: dustY + 8, duration: 350, onComplete: () => dust.destroy() });
+      }
     }
 
     // Boss ability timer
@@ -3229,7 +3324,20 @@ export class GameScene extends Phaser.Scene {
     const cy = 280;
 
     const overlay = this.add.rectangle(cx, cy, 640, 640, 0x000000, 0.7).setDepth(5000).setScrollFactor(0);
-    const title = this.add.text(cx, cy - 100, '⏸ PAUSED', {
+
+    // Panel background using Artwork
+    const panelW = 360, panelH = 340;
+    const panelParts: Phaser.GameObjects.GameObject[] = [];
+    if (this.textures.exists('ui-bg')) {
+      panelParts.push(this.add.image(cx, cy, 'ui-bg').setDisplaySize(panelW, panelH).setDepth(5000).setScrollFactor(0).setAlpha(0.95));
+    } else {
+      panelParts.push(this.add.rectangle(cx, cy, panelW, panelH, 0x1a1a2e, 0.95).setDepth(5000).setScrollFactor(0));
+    }
+    if (this.textures.exists('ui-border')) {
+      panelParts.push(this.add.image(cx, cy, 'ui-border').setDisplaySize(panelW + 8, panelH + 8).setDepth(5000).setScrollFactor(0).setAlpha(0.8));
+    }
+
+    const title = this.add.text(cx, cy - 130, '⏸ PAUSED', {
       fontSize: '36px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 5
     }).setOrigin(0.5).setDepth(5001).setScrollFactor(0);
 
@@ -3244,33 +3352,54 @@ export class GameScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(5001).setScrollFactor(0)
     );
 
-    // Equipment display
-    const equipLines: string[] = [];
-    this.equipment.forEach((item) => {
-      const ri: Record<string, string> = { common: '⬜', rare: '🔷', epic: '🔶' };
-      equipLines.push(`${ri[item.rarity]} ${item.name} (+${item.value} ${item.stat})`);
-    });
-    const equipHeader = this.add.text(cx, cy + 35, '🎒 Equipment:', {
+    // Equipment display with slot sprites
+    const equipItems: Phaser.GameObjects.GameObject[] = [];
+    const equipHeader = this.add.text(cx, cy + 30, '🎒 Equipment:', {
       fontSize: '14px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
     }).setOrigin(0.5).setDepth(5001).setScrollFactor(0);
-    const equipTexts = equipLines.map((l, i) =>
-      this.add.text(cx, cy + 55 + i * 20, l || 'None', {
-        fontSize: '13px', color: '#ccc', stroke: '#000', strokeThickness: 2
-      }).setOrigin(0.5).setDepth(5001).setScrollFactor(0)
-    );
+    equipItems.push(equipHeader);
 
-    // Resume button
-    const resumeY = cy + 130;
-    const resumeBtn = this.add.rectangle(cx, resumeY, 200, 40, 0x22c55e, 0.9)
-      .setDepth(5001).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    let eqIdx = 0;
+    this.equipment.forEach((item) => {
+      const eqY = cy + 52 + eqIdx * 24;
+      // Slot background sprite
+      if (this.textures.exists('ui-slot')) {
+        const slot = this.add.image(cx, eqY, 'ui-slot').setDisplaySize(300, 22).setDepth(5001).setScrollFactor(0).setAlpha(0.5);
+        equipItems.push(slot);
+      }
+      const ri: Record<string, string> = { common: '⬜', rare: '🔷', epic: '🔶' };
+      const rarityColors: Record<string, string> = { common: '#d4d4d4', rare: '#60a5fa', epic: '#f59e0b' };
+      const eqText = this.add.text(cx, eqY, `${ri[item.rarity]} ${item.name} (+${item.value} ${item.stat})`, {
+        fontSize: '12px', color: rarityColors[item.rarity] || '#ccc', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(5002).setScrollFactor(0);
+      equipItems.push(eqText);
+      eqIdx++;
+    });
+    if (eqIdx === 0) {
+      const noEq = this.add.text(cx, cy + 52, 'None yet', {
+        fontSize: '12px', color: '#777', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(5002).setScrollFactor(0);
+      equipItems.push(noEq);
+    }
+
+    // Resume button — use Artwork button if available
+    const resumeY = cy + 135;
+    let resumeBtn: Phaser.GameObjects.GameObject;
+    if (this.textures.exists('ui-btn1')) {
+      resumeBtn = this.add.image(cx, resumeY, 'ui-btn1').setDisplaySize(200, 44).setDepth(5001).setScrollFactor(0)
+        .setInteractive({ useHandCursor: true });
+      (resumeBtn as Phaser.GameObjects.Image).on('pointerover', () => (resumeBtn as Phaser.GameObjects.Image).setTint(0xaaffaa));
+      (resumeBtn as Phaser.GameObjects.Image).on('pointerout', () => (resumeBtn as Phaser.GameObjects.Image).clearTint());
+    } else {
+      resumeBtn = this.add.rectangle(cx, resumeY, 200, 40, 0x22c55e, 0.9)
+        .setDepth(5001).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    }
     const resumeText = this.add.text(cx, resumeY, '▶ Resume (ESC)', {
-      fontSize: '16px', color: '#fff', fontStyle: 'bold'
+      fontSize: '16px', color: '#fff', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
     }).setOrigin(0.5).setDepth(5002).setScrollFactor(0);
-    resumeBtn.on('pointerover', () => resumeBtn.setFillStyle(0x16a34a));
-    resumeBtn.on('pointerout', () => resumeBtn.setFillStyle(0x22c55e));
-    resumeBtn.on('pointerdown', () => this.resumeGame());
+    (resumeBtn as Phaser.GameObjects.Image).on('pointerdown', () => this.resumeGame());
 
-    this.pauseOverlay = [overlay, title, ...statsTexts, equipHeader, ...equipTexts, resumeBtn, resumeText];
+    this.pauseOverlay = [overlay, ...panelParts, title, ...statsTexts, ...equipItems, resumeBtn, resumeText];
   }
 
   private resumeGame() {
