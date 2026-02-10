@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 // ─── Types ───────────────────────────────────────────────────────────────────
 type PlayerClass = 'warrior' | 'rogue' | 'dark-knight';
 type EnemyKind = 'orc' | 'skeleton' | 'vampire';
+type BossKind = 'pink' | 'owlet' | 'dude';
 type ElementType = 'fire' | 'ice' | 'none';
 
 interface ClassStats {
@@ -58,6 +59,43 @@ const ENEMY_TEMPLATES: Record<EnemyKind, { hp: number; damage: number; speed: nu
   orc:      { hp: 45, damage: 10, speed: 100, attackRange: 200 },   // tank: high HP, slow
   skeleton: { hp: 25, damage: 16, speed: 160, attackRange: 180 },   // glass cannon: fast, fragile
   vampire:  { hp: 50, damage: 9,  speed: 140, attackRange: 220 },   // sustain: lifesteal, moderate
+};
+
+// ─── Boss Templates ──────────────────────────────────────────────────────────
+interface BossTemplate {
+  name: string;
+  title: string;
+  emoji: string;
+  hp: number;
+  damage: number;
+  speed: number;
+  color: number;
+  barColor: number;
+}
+
+const BOSS_TEMPLATES: Record<BossKind, BossTemplate> = {
+  pink: {
+    name: 'Pink Monster', title: 'THE BERSERKER', emoji: '🩷',
+    hp: 500, damage: 20, speed: 180, color: 0xff69b4, barColor: 0xff1493,
+  },
+  owlet: {
+    name: 'Owlet Monster', title: 'THE ARCHMAGE', emoji: '🦉',
+    hp: 400, damage: 15, speed: 140, color: 0x60a5fa, barColor: 0x3b82f6,
+  },
+  dude: {
+    name: 'Dude Monster', title: 'THE TITAN', emoji: '💪',
+    hp: 800, damage: 40, speed: 90, color: 0xf59e0b, barColor: 0xd97706,
+  },
+};
+
+// Boss schedule: which boss appears at which wave
+const BOSS_WAVE_SCHEDULE: Record<number, { kind: BossKind; enraged: boolean }> = {
+  3: { kind: 'pink', enraged: false },
+  6: { kind: 'owlet', enraged: false },
+  9: { kind: 'dude', enraged: false },
+  12: { kind: 'pink', enraged: true },
+  15: { kind: 'owlet', enraged: true },
+  18: { kind: 'dude', enraged: true },
 };
 
 // ─── Equipment Pool ──────────────────────────────────────────────────────────
@@ -137,6 +175,28 @@ export class GameScene extends Phaser.Scene {
   private waveStartHP = 0;
   private waveStartTime = 0;
   private bossesKilled = 0;
+
+  // ── Boss system ──
+  private activeBoss: Phaser.Physics.Arcade.Sprite | null = null;
+  private bossHPBarBg?: Phaser.GameObjects.Rectangle;
+  private bossHPBarFill?: Phaser.GameObjects.Rectangle;
+  private bossNameText?: Phaser.GameObjects.Text;
+  private bossPhaseText?: Phaser.GameObjects.Text;
+  private bossBarContainer: Phaser.GameObjects.GameObject[] = [];
+  private bossPhase = 1;
+  private bossAbilityTimer = 0;
+  private bossKind: BossKind = 'pink';
+  private vignetteOverlay?: Phaser.GameObjects.Rectangle;
+
+  // ── Pause ──
+  private isPaused = false;
+  private pauseOverlay: Phaser.GameObjects.GameObject[] = [];
+  private escKey!: Phaser.Input.Keyboard.Key;
+  private pKey!: Phaser.Input.Keyboard.Key;
+
+  // ── Teleport ──
+  private teleportTiles: { x: number; y: number; sprite: Phaser.GameObjects.Sprite }[] = [];
+  private teleportCooldown = 0;
 
   // ── Mobile touch ──
   private isMobile = false;
@@ -228,6 +288,16 @@ export class GameScene extends Phaser.Scene {
     this.badgeShowing = false;
     this.achievements = new Set();
 
+    // Boss/pause/teleport reset
+    this.activeBoss = null;
+    this.bossPhase = 1;
+    this.bossAbilityTimer = 0;
+    this.isPaused = false;
+    this.pauseOverlay = [];
+    this.teleportTiles = [];
+    this.teleportCooldown = 0;
+    this.bossBarContainer = [];
+
     // Apply class stats
     const stats = CLASS_STATS[this.playerClass];
     this.playerHP = stats.hp;
@@ -304,6 +374,60 @@ export class GameScene extends Phaser.Scene {
     
     this.load.image('wood-wall',    'sprites/Sprout Lands - Sprites - Basic pack/Tilesets/Wooden_House_Walls_Tilset.png');
 
+    // ── Boss Monsters (32×32 per frame) ──
+    const monsterAnims = ['Idle_4', 'Walk_6', 'Run_6', 'Attack1_4', 'Attack2_6', 'Walk+Attack_6', 'Throw_4', 'Hurt_4', 'Death_8', 'Jump_8', 'Push_6', 'Climb_4'];
+    const bossNames: { key: string; folder: string; prefix: string }[] = [
+      { key: 'pink', folder: '1 Pink_Monster', prefix: 'Pink_Monster' },
+      { key: 'owlet', folder: '2 Owlet_Monster', prefix: 'Owlet_Monster' },
+      { key: 'dude', folder: '3 Dude_Monster', prefix: 'Dude_Monster' },
+    ];
+    bossNames.forEach(({ key, folder, prefix }) => {
+      monsterAnims.forEach(anim => {
+        const animName = anim.split('_')[0]!.toLowerCase().replace('+', '_');
+        this.load.spritesheet(`boss-${key}-${animName}`, `sprites/${folder}/${prefix}_${anim}.png`, { frameWidth: 32, frameHeight: 32 });
+      });
+      this.load.image(`boss-${key}-dust`, `sprites/${folder}/Double_Jump_Dust_5.png`);
+      this.load.image(`boss-${key}-rock1`, `sprites/${folder}/Rock1.png`);
+      this.load.image(`boss-${key}-rock2`, `sprites/${folder}/Rock2.png`);
+    });
+
+    // ── Magic Effects (64×64 individual frames) ──
+    const effects: { name: string; folder: string; count: number }[] = [
+      { name: 'earth-spike', folder: 'Earth_Spike', count: 9 },
+      { name: 'explosion', folder: 'Explosion', count: 7 },
+      { name: 'fire-ball', folder: 'Fire_Ball', count: 10 },
+      { name: 'molten-spear', folder: 'Molten_Spear', count: 12 },
+      { name: 'portal-fx', folder: 'Portal', count: 10 },
+      { name: 'rocks-fx', folder: 'Rocks', count: 10 },
+      { name: 'tornado-fx', folder: 'Tornado', count: 9 },
+      { name: 'water-fx', folder: 'Water', count: 10 },
+      { name: 'water-geyser', folder: 'Water_Geyser', count: 13 },
+      { name: 'wind-fx', folder: 'Wind', count: 10 },
+    ];
+    effects.forEach(({ name, folder, count }) => {
+      for (let i = 1; i <= count; i++) {
+        const num = String(i).padStart(3, '0');
+        this.load.image(`${name}-${i}`, `sprites/Foozle_2DE0001_Pixel_Magic_Effects/${folder}/${num}.png`);
+      }
+    });
+
+    // ── Magic Icons (32×32) ──
+    for (let i = 0; i <= 9; i++) {
+      this.load.image(`magic-icon-${i}`, `sprites/Foozle_2DE0001_Pixel_Magic_Effects/Icons/tile00${i}.png`);
+    }
+
+    // ── Portal tile ──
+    this.load.spritesheet('portal-tile', 'sprites/Ship_portal_32x32.png', { frameWidth: 32, frameHeight: 32 });
+
+    // ── UI Artwork ──
+    this.load.image('ui-bg', 'sprites/Artwork/Gray/square/background.png');
+    this.load.image('ui-border', 'sprites/Artwork/Gray/square/border.png');
+    this.load.image('ui-slot', 'sprites/Artwork/Gray/square/slot.png');
+    this.load.image('ui-btn1', 'sprites/Artwork/Gray/square/Buttons/button_1.png');
+    this.load.image('ui-btn2', 'sprites/Artwork/Gray/square/Buttons/button_2.png');
+    this.load.image('ui-bar-h', 'sprites/Artwork/half_Customizible/square/bar_horizontal.png');
+    this.load.image('ui-icons', 'sprites/Artwork/Gray/icons/icons.png');
+
     console.log(`[Snoo's Dungeon] Loading sprites for class: ${this.playerClass}`);
   }
 
@@ -364,6 +488,68 @@ export class GameScene extends Phaser.Scene {
     // ── Chest (48x48, 5 cols x 2 rows) ──
     this.anims.create({ key: 'chest-closed', frames: [{ key: 'chest', frame: 0 }], frameRate: 1, repeat: 0 });
     this.anims.create({ key: 'chest-open',   frames: this.anims.generateFrameNumbers('chest', { start: 0, end: 4 }), frameRate: 8, repeat: 0 });
+
+    // ── Boss Monster Animations (32×32 frames) ──
+    const bossAnimDefs: { suffix: string; frames: number; rate: number; loop: boolean }[] = [
+      { suffix: 'idle',      frames: 4,  rate: 6,  loop: true },
+      { suffix: 'walk',      frames: 6,  rate: 10, loop: true },
+      { suffix: 'run',       frames: 6,  rate: 12, loop: true },
+      { suffix: 'attack1',   frames: 4,  rate: 10, loop: false },
+      { suffix: 'attack2',   frames: 6,  rate: 12, loop: false },
+      { suffix: 'walk_attack', frames: 6, rate: 12, loop: true },
+      { suffix: 'throw',     frames: 4,  rate: 10, loop: false },
+      { suffix: 'hurt',      frames: 4,  rate: 10, loop: false },
+      { suffix: 'death',     frames: 8,  rate: 8,  loop: false },
+      { suffix: 'jump',      frames: 8,  rate: 10, loop: false },
+      { suffix: 'push',      frames: 6,  rate: 10, loop: false },
+      { suffix: 'climb',     frames: 4,  rate: 8,  loop: true },
+    ];
+    ['pink', 'owlet', 'dude'].forEach(boss => {
+      bossAnimDefs.forEach(({ suffix, frames, rate, loop }) => {
+        const key = `boss-${boss}-${suffix}-anim`;
+        if (!this.anims.exists(key) && this.textures.exists(`boss-${boss}-${suffix}`)) {
+          this.anims.create({
+            key,
+            frames: this.anims.generateFrameNumbers(`boss-${boss}-${suffix}`, { start: 0, end: frames - 1 }),
+            frameRate: rate,
+            repeat: loop ? -1 : 0,
+          });
+        }
+      });
+    });
+
+    // ── Magic Effect Animations (built from individual frame images) ──
+    const effectAnimDefs: { name: string; count: number; rate: number; loop: boolean }[] = [
+      { name: 'earth-spike', count: 9, rate: 14, loop: false },
+      { name: 'explosion', count: 7, rate: 12, loop: false },
+      { name: 'fire-ball', count: 10, rate: 14, loop: true },
+      { name: 'molten-spear', count: 12, rate: 14, loop: false },
+      { name: 'portal-fx', count: 10, rate: 10, loop: true },
+      { name: 'rocks-fx', count: 10, rate: 12, loop: false },
+      { name: 'tornado-fx', count: 9, rate: 10, loop: true },
+      { name: 'water-fx', count: 10, rate: 10, loop: false },
+      { name: 'water-geyser', count: 13, rate: 14, loop: false },
+      { name: 'wind-fx', count: 10, rate: 14, loop: false },
+    ];
+    effectAnimDefs.forEach(({ name, count, rate, loop }) => {
+      const key = `${name}-anim`;
+      if (!this.anims.exists(key)) {
+        const frames: { key: string }[] = [];
+        for (let i = 1; i <= count; i++) {
+          frames.push({ key: `${name}-${i}` });
+        }
+        this.anims.create({ key, frames, frameRate: rate, repeat: loop ? -1 : 0 });
+      }
+    });
+
+    // ── Portal tile animation ──
+    if (this.textures.exists('portal-tile') && !this.anims.exists('portal-tile-anim')) {
+      this.anims.create({
+        key: 'portal-tile-anim',
+        frames: this.anims.generateFrameNumbers('portal-tile', { start: 0, end: 7 }),
+        frameRate: 8, repeat: -1,
+      });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -381,7 +567,11 @@ export class GameScene extends Phaser.Scene {
     return `${this.playerAnimPrefix}-${action}-anim`;
   }
 
-  private enemyAnim(kind: EnemyKind, action: string): string {
+  private enemyAnim(kind: EnemyKind | BossKind, action: string): string {
+    // Boss animations use 'boss-{kind}-{action}-anim' naming
+    if (kind === 'pink' || kind === 'owlet' || kind === 'dude') {
+      return `boss-${kind}-${action}-anim`;
+    }
     return `${kind}-${action}-anim`;
   }
 
@@ -406,6 +596,9 @@ export class GameScene extends Phaser.Scene {
     bg.fillRect(0, 0, 640, 640);
     bg.setDepth(-10);
 
+    // FIX: Set physics world bounds so enemies can't leave the map
+    this.physics.world.setBounds(0, 0, 640, 640);
+
     // Generate level
     this.generateLevel();
 
@@ -421,6 +614,8 @@ export class GameScene extends Phaser.Scene {
     this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     this.eKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.qKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+    this.escKey   = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.pKey     = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.P);
 
     // Mobile detection & touch controls
     this.isMobile = !this.sys.game.device.os.desktop;
@@ -463,6 +658,10 @@ export class GameScene extends Phaser.Scene {
     // Camera
     this.cameras.main.setBounds(0, 0, 640, 640);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
+    // Vignette overlay for boss/low-HP effects
+    this.vignetteOverlay = this.add.rectangle(320, 320, 640, 640, 0x000000, 0)
+      .setDepth(998).setScrollFactor(0);
 
     this.waveStartHP = this.playerHP;
     this.waveStartTime = Date.now();
@@ -599,6 +798,16 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Pause toggle
+    if (Phaser.Input.Keyboard.JustDown(this.escKey) || Phaser.Input.Keyboard.JustDown(this.pKey)) {
+      if (this.isPaused) this.resumeGame();
+      else this.pauseGame();
+    }
+    if (this.isPaused) return;
+
+    // Teleport cooldown
+    if (this.teleportCooldown > 0) this.teleportCooldown -= delta;
+
     this.score = Math.floor((Date.now() - this.startTime) / 100);
 
     // Regen modifier
@@ -703,6 +912,17 @@ export class GameScene extends Phaser.Scene {
     // ── Chests ──
     this.checkChestPickups();
 
+    // ── Boss AI ──
+    if (this.activeBoss && this.activeBoss.active) {
+      this.updateBossAI(delta);
+    }
+
+    // ── Teleport check ──
+    this.checkTeleport();
+
+    // ── Vignette effects ──
+    this.updateVignette();
+
     // ── Wave completion ──
     if (this.waveInProgress && this.enemies.countActive() === 0) {
       this.startNextWave();
@@ -739,6 +959,27 @@ export class GameScene extends Phaser.Scene {
         if (this.textures.exists('wood-wall')) {
           this.add.image(px, py, 'wood-wall').setOrigin(0.5).setDisplaySize(tileSize, tileSize).setDepth(5).setTint(0x9b7f57);
         }
+      } else if (tile === 'T' || tile === 't') {
+        // Teleport tile — render floor + portal on top
+        if (this.textures.exists('grass-tiles')) {
+          this.add.sprite(px, py, 'grass-tiles', 12).setOrigin(0.5).setDisplaySize(tileSize, tileSize).setDepth(0);
+        }
+        this.floorTiles.push({ x: px, y: py });
+
+        // Portal visual
+        let portalSprite: Phaser.GameObjects.Sprite;
+        if (this.textures.exists('portal-tile')) {
+          portalSprite = this.add.sprite(px, py, 'portal-tile').setDisplaySize(56, 56).setDepth(3).setAlpha(0.85);
+          if (this.anims.exists('portal-tile-anim')) portalSprite.play('portal-tile-anim');
+        } else {
+          portalSprite = this.add.sprite(px, py, 'grass-tiles', 12).setDisplaySize(56, 56).setDepth(3);
+        }
+        // Animated magic portal effect on top
+        if (this.textures.exists('portal-fx-1')) {
+          const pfx = this.add.sprite(px, py, 'portal-fx-1').setDisplaySize(64, 64).setDepth(4).setAlpha(0.6);
+          if (this.anims.exists('portal-fx-anim')) pfx.play('portal-fx-anim');
+        }
+        this.teleportTiles.push({ x: px, y: py, sprite: portalSprite });
       } else {
         // Frame 12 = solid bright green (rgb 192,212,112) — the cleanest grass tile
         if (this.textures.exists('grass-tiles')) {
@@ -814,6 +1055,9 @@ export class GameScene extends Phaser.Scene {
     this.enemies.children.entries.forEach((obj) => {
       const enemy = obj as Phaser.Physics.Arcade.Sprite;
       if (!enemy.active) return;
+
+      // Bosses have their own AI in updateBossAI()
+      if (enemy.getData('isBoss')) return;
 
       const kind = enemy.getData('kind') as EnemyKind;
       const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
@@ -1087,15 +1331,112 @@ export class GameScene extends Phaser.Scene {
     const tile = this.floorTiles[Math.floor(this.floorTiles.length / 2)];
     if (!tile) return;
 
-    this.spawnEnemy(tile.x, tile.y, 'vampire', 1.8);
-    this.playSfx('boss');
+    // Determine which boss from schedule
+    const schedule = BOSS_WAVE_SCHEDULE[this.currentWave];
+    const bossKind: BossKind = schedule?.kind || (['pink', 'owlet', 'dude'][this.currentWave % 3] as BossKind);
+    const enraged = schedule?.enraged || this.currentWave > 18;
+    this.bossKind = bossKind;
+    this.bossPhase = 1;
+    this.bossAbilityTimer = 2000; // First ability after 2s
 
-    this.cameras.main.shake(500, 0.015);
-    const label = this.add.text(320, 300, '⚔️ VAMPIRE LORD ⚔️', {
-      fontSize: '32px', color: '#ff2222', fontStyle: 'bold', stroke: '#000', strokeThickness: 5
-    }).setOrigin(0.5).setDepth(1005);
-    this.tweens.add({ targets: label, scale: 1.3, yoyo: true, duration: 300, repeat: 3 });
-    this.tweens.add({ targets: label, alpha: 0, y: 260, duration: 2500, delay: 1000, onComplete: () => label.destroy() });
+    const template = BOSS_TEMPLATES[bossKind];
+    const waveMul = 1 + (this.currentWave - 1) * 0.1;
+    const hpMul = enraged ? 1.5 : 1;
+    const hp = Math.floor(template.hp * waveMul * hpMul);
+
+    // Create boss sprite
+    const textureKey = `boss-${bossKind}-idle`;
+    const boss = this.enemies.create(tile.x, tile.y, textureKey) as Phaser.Physics.Arcade.Sprite;
+    boss.setDepth(12).setCollideWorldBounds(true);
+
+    // Boss is 2.5x-3x a regular tile (they're 32×32 native with full frame content)
+    const bossSize = bossKind === 'dude' ? 160 : 130;
+    boss.setDisplaySize(bossSize, bossSize);
+
+    const targetScaleX = boss.scaleX;
+    const targetScaleY = boss.scaleY;
+    boss.setData('targetScaleX', targetScaleX);
+    boss.setData('targetScaleY', targetScaleY);
+
+    if (boss.body) {
+      boss.body.setSize(22, 22);
+      boss.body.setOffset(5, 5);
+    }
+
+    boss.setData('kind', bossKind);
+    boss.setData('isBoss', true);
+    boss.setData('bossKind', bossKind);
+    boss.setData('hp', hp);
+    boss.setData('maxHp', hp);
+    boss.setData('damage', Math.floor(template.damage * waveMul));
+    boss.setData('speed', template.speed);
+    boss.setData('attackRange', 250);
+    boss.setData('attackCooldown', 0);
+    boss.setData('enraged', enraged);
+    boss.setData('baseTint', 0xffffff);
+    boss.setData('barWidth', 0); // No overhead bar for boss — uses bottom bar
+
+    // Don't create overhead HP bar for bosses — they get the bottom bar
+    boss.setData('healthBarBg', null);
+    boss.setData('healthBar', null);
+
+    if (this.anims.exists(`boss-${bossKind}-idle-anim`)) {
+      boss.play(`boss-${bossKind}-idle-anim`);
+    }
+
+    this.activeBoss = boss;
+
+    // ── Boss entrance cinematic ──
+    // 1) Screen darkens
+    if (this.vignetteOverlay) {
+      this.tweens.add({ targets: this.vignetteOverlay, alpha: 0.5, duration: 800 });
+    }
+
+    // 2) Portal entrance effect
+    if (this.textures.exists('portal-fx-1')) {
+      const portal = this.add.sprite(tile.x, tile.y, 'portal-fx-1').setDisplaySize(120, 120).setDepth(11).setAlpha(0.8);
+      if (this.anims.exists('portal-fx-anim')) portal.play('portal-fx-anim');
+      this.time.delayedCall(1500, () => portal.destroy());
+    }
+
+    // 3) Boss emerges with scale animation
+    boss.setAlpha(0);
+    boss.setScale(0.1, 0.1);
+    this.tweens.add({
+      targets: boss,
+      scaleX: targetScaleX, scaleY: targetScaleY, alpha: 1,
+      duration: 1000, ease: 'Back.easeOut', delay: 400,
+    });
+
+    // 4) Heavy screen shake
+    this.time.delayedCall(400, () => {
+      this.cameras.main.shake(600, 0.025);
+      this.playSfx('boss');
+    });
+
+    // 5) Boss title text
+    const titleColor = bossKind === 'pink' ? '#ff69b4' : bossKind === 'owlet' ? '#60a5fa' : '#f59e0b';
+    const label = this.add.text(320, 280, `${template.emoji} ${template.title} ${template.emoji}`, {
+      fontSize: '36px', color: titleColor, fontStyle: 'bold', stroke: '#000', strokeThickness: 6
+    }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
+    if (enraged) {
+      const enragedLabel = this.add.text(320, 320, '⚠️ ENRAGED ⚠️', {
+        fontSize: '20px', color: '#ef4444', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+      }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
+      this.tweens.add({ targets: enragedLabel, alpha: 0, y: 300, duration: 3000, delay: 1500, onComplete: () => enragedLabel.destroy() });
+    }
+    this.tweens.add({ targets: label, scale: 1.2, yoyo: true, duration: 400, repeat: 2 });
+    this.tweens.add({ targets: label, alpha: 0, y: 240, duration: 2500, delay: 1500, onComplete: () => label.destroy() });
+
+    // 6) Restore vignette
+    this.time.delayedCall(2000, () => {
+      if (this.vignetteOverlay && !this.activeBoss) {
+        this.tweens.add({ targets: this.vignetteOverlay, alpha: 0, duration: 500 });
+      }
+    });
+
+    // 7) Create bottom boss HP bar
+    this.createBossHPBar(template, enraged);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1103,6 +1444,7 @@ export class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════════════════════
   private startNextWave() {
     this.waveInProgress = false;
+    const prevWasBoss = this.isBossWave && this.bossSpawned;
     this.currentWave++;
     this.waveStartHP = this.playerHP;
     this.waveStartTime = Date.now();
@@ -1114,16 +1456,25 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.isBossWave = this.currentWave % 10 === 0;
+    this.isBossWave = this.currentWave % 3 === 0;   // Boss every 3rd wave
     this.bossSpawned = false;
 
     this.maxHP += 15;
     this.playerHP = Math.min(this.playerHP + 20, this.maxHP + this.equipBonusHP);
 
-    const rw = this.add.text(320, 200, '+20 HP!', {
-      fontSize: '28px', color: '#22c55e', stroke: '#000', strokeThickness: 3
-    }).setOrigin(0.5);
-    this.tweens.add({ targets: rw, y: 170, alpha: 0, duration: 1500, ease: 'Power2', onComplete: () => rw.destroy() });
+    // Grant full HP on boss defeat
+    if (prevWasBoss) {
+      this.playerHP = this.maxHP + this.equipBonusHP;
+      const fullHPText = this.add.text(320, 200, '💚 FULL HP RESTORED!', {
+        fontSize: '28px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 4
+      }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
+      this.tweens.add({ targets: fullHPText, y: 170, alpha: 0, duration: 2000, ease: 'Power2', onComplete: () => fullHPText.destroy() });
+    } else {
+      const rw = this.add.text(320, 200, '+20 HP!', {
+        fontSize: '28px', color: '#22c55e', stroke: '#000', strokeThickness: 3
+      }).setOrigin(0.5);
+      this.tweens.add({ targets: rw, y: 170, alpha: 0, duration: 1500, ease: 'Power2', onComplete: () => rw.destroy() });
+    }
 
     this.enemiesPerWave = Math.min(3 + Math.floor(this.currentWave / 2), 10);
 
@@ -1205,10 +1556,8 @@ export class GameScene extends Phaser.Scene {
 
     // Dark Knight fire trail on every attack
     if (this.playerClass === 'dark-knight') {
-      const fx = this.add.sprite(this.player.x + (facingRight ? 40 : -40), this.player.y, 'fire-fx')
-        .setDisplaySize(60, 60).setDepth(99).setAlpha(0.6);
-      fx.play('fire-anim');
-      this.time.delayedCall(700, () => fx.destroy());
+      const fxX = this.player.x + (facingRight ? 40 : -40);
+      this.playMagicEffect('fire-ball', fxX, this.player.y, 55);
     }
 
     // Forward lunge on attack (all classes get a small lunge)
@@ -1277,15 +1626,8 @@ export class GameScene extends Phaser.Scene {
         if (d < closestDist) { closest = e; closestDist = d; }
       });
       if (closest) {
-        // Purple vanish effect at start
-        for (let i = 0; i < 8; i++) {
-          const sp = this.add.circle(
-            this.player.x + Phaser.Math.Between(-25, 25),
-            this.player.y + Phaser.Math.Between(-25, 25),
-            Phaser.Math.Between(4, 10), 0x6b21a8, 0.8
-          ).setDepth(99);
-          this.tweens.add({ targets: sp, alpha: 0, scale: 0.1, duration: 350, delay: i * 30, onComplete: () => sp.destroy() });
-        }
+        // Purple vanish effect — portal at start position
+        this.playMagicEffect('portal-fx', this.player.x, this.player.y, 80);
 
         // Teleport behind the closest enemy
         const cx = (closest as Phaser.Physics.Arcade.Sprite).x;
@@ -1298,9 +1640,8 @@ export class GameScene extends Phaser.Scene {
           Phaser.Math.Clamp(behindY, 40, 560)
         );
 
-        // Appear effect
-        const flash = this.add.circle(this.player.x, this.player.y, 30, 0xa855f7, 0.6).setDepth(99);
-        this.tweens.add({ targets: flash, scale: 2, alpha: 0, duration: 300, onComplete: () => flash.destroy() });
+        // Appear effect — portal at destination
+        this.playMagicEffect('portal-fx', this.player.x, this.player.y, 70);
 
         // Auto-attack the target
         this.time.delayedCall(50, () => {
@@ -1324,12 +1665,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Normal dash — use physics velocity (walls will block!)
-    // Dash trail effects
+    // Dash trail effects using magic sprites
     const trailColor = this.playerClass === 'dark-knight' ? 0xef4444 : 0x60a5fa;
-    for (let i = 0; i < 4; i++) {
-      this.time.delayedCall(i * 40, () => {
-        const t = this.add.circle(this.player.x, this.player.y, 14, trailColor, 0.5 - i * 0.1).setDepth(9);
-        this.tweens.add({ targets: t, alpha: 0, scale: 0.3, duration: 300, onComplete: () => t.destroy() });
+    const trailEffect = this.playerClass === 'dark-knight' ? 'fire-ball' : 'wind-fx';
+    for (let i = 0; i < 3; i++) {
+      this.time.delayedCall(i * 50, () => {
+        this.playMagicEffect(trailEffect, this.player.x, this.player.y, 45);
       });
     }
 
@@ -1380,9 +1721,8 @@ export class GameScene extends Phaser.Scene {
 
     // Dark Knight: leave fire on dash path
     if (this.playerClass === 'dark-knight') {
-      const fx = this.add.sprite(this.player.x, this.player.y, 'fire-fx').setDisplaySize(60, 60).setDepth(99).setAlpha(0.5);
-      fx.play('fire-anim');
-      this.time.delayedCall(800, () => fx.destroy());
+      this.playMagicEffect('fire-ball', this.player.x, this.player.y, 70);
+      this.playMagicEffect('molten-spear', this.player.x, this.player.y, 60);
       // Fire damages enemies that walk over it
       this.enemies.children.entries.forEach((obj) => {
         const e = obj as Phaser.Physics.Arcade.Sprite;
@@ -1413,39 +1753,33 @@ export class GameScene extends Phaser.Scene {
 
     // Class-specific visual effects
     if (this.playerClass === 'warrior') {
-      // Shield slam — golden shockwave + brief invincibility
+      // Shield slam — earth spike + rocks + golden shockwave + brief invincibility
       this.invincible = Math.max(this.invincible, 600);
+      this.playMagicEffect('earth-spike', this.player.x, this.player.y, 120);
+      this.playMagicEffect('rocks-fx', this.player.x, this.player.y, 100);
+      // Shield glow ring
       const ring1 = this.add.circle(this.player.x, this.player.y, 30, 0xfacc15, 0.6).setDepth(99);
       this.tweens.add({ targets: ring1, scale: radius / 30, alpha: 0, duration: 500, onComplete: () => ring1.destroy() });
-      const ring2 = this.add.circle(this.player.x, this.player.y, 20, 0xffffff, 0.4).setDepth(99);
-      this.tweens.add({ targets: ring2, scale: radius / 20, alpha: 0, duration: 400, delay: 80, onComplete: () => ring2.destroy() });
-      // Shield glow on player
+      // Shield shimmer on player
       const shield = this.add.circle(this.player.x, this.player.y, 40, 0x22c55e, 0.3).setDepth(99);
       this.tweens.add({ targets: shield, scale: 1.5, alpha: 0, duration: 600, onComplete: () => shield.destroy() });
     } else if (this.playerClass === 'dark-knight') {
-      // Fire eruption
+      // Fire eruption — fireballs + explosion
+      this.playMagicEffect('explosion', this.player.x, this.player.y, 100);
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
-        const fx = this.add.sprite(
-          this.player.x + Math.cos(a) * 60,
-          this.player.y + Math.sin(a) * 60,
-          'fire-fx'
-        ).setDisplaySize(70, 70).setDepth(99).setAlpha(0.7);
-        fx.play('fire-anim');
-        this.time.delayedCall(600 + i * 100, () => fx.destroy());
+        this.playMagicEffect('fire-ball', this.player.x + Math.cos(a) * 60, this.player.y + Math.sin(a) * 60, 60);
       }
       const ring = this.add.circle(this.player.x, this.player.y, radius, 0xff4400, 0.3).setDepth(99);
       this.tweens.add({ targets: ring, alpha: 0, scale: 1.3, duration: 500, onComplete: () => ring.destroy() });
     } else {
-      // Rogue — blade flurry, many small slashes
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        const slash = this.add.circle(
-          this.player.x + Math.cos(a) * Phaser.Math.Between(30, 80),
-          this.player.y + Math.sin(a) * Phaser.Math.Between(30, 80),
-          8, 0xa855f7, 0.7
-        ).setDepth(99);
-        this.tweens.add({ targets: slash, alpha: 0, scale: 2.5, duration: 250, delay: i * 30, onComplete: () => slash.destroy() });
+      // Rogue — wind blade flurry + tornado
+      this.playMagicEffect('tornado-fx', this.player.x, this.player.y, 90);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        this.playMagicEffect('wind-fx',
+          this.player.x + Math.cos(a) * Phaser.Math.Between(30, 70),
+          this.player.y + Math.sin(a) * Phaser.Math.Between(30, 70), 50);
       }
       const ring = this.add.circle(this.player.x, this.player.y, radius, 0xa855f7, 0.2).setDepth(99);
       this.tweens.add({ targets: ring, alpha: 0, scale: 1.3, duration: 400, onComplete: () => ring.destroy() });
@@ -1487,8 +1821,12 @@ export class GameScene extends Phaser.Scene {
   // HIT HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
   private handleAttackHit(hitbox: any, enemy: any) {
-    const damage = hitbox.getData('damage');
+    let damage = hitbox.getData('damage');
     const element = hitbox.getData('element') as ElementType;
+    
+    // Boss armor reduces damage by 50%
+    if (enemy.getData('armor')) damage = Math.floor(damage * 0.5);
+    
     let hp = enemy.getData('hp');
     const kind = enemy.getData('kind') as EnemyKind;
     hp -= damage;
@@ -1577,9 +1915,10 @@ export class GameScene extends Phaser.Scene {
   // ENEMY DEATH
   // ═══════════════════════════════════════════════════════════════════════════
   private handleEnemyDeath(enemy: Phaser.Physics.Arcade.Sprite) {
-    const kind = enemy.getData('kind') as EnemyKind;
+    const kind = enemy.getData('kind') as EnemyKind | BossKind;
+    const isBoss = enemy.getData('isBoss') || false;
     this.totalKills++;
-    if (enemy.getData('barWidth') > 60) this.bossesKilled++;
+    if (isBoss) this.bossesKilled++;
 
     this.playSfx('kill');
 
@@ -1590,18 +1929,29 @@ export class GameScene extends Phaser.Scene {
     this.comboTimer = 3000;
 
     const comboBonus = Math.min(this.comboCount, 5);
-    this.score += 100 * this.currentWave * comboBonus;
+    this.score += (isBoss ? 500 : 100) * this.currentWave * comboBonus;
 
     this.burnEffects.delete(enemy);
     this.freezeEffects.delete(enemy);
 
-    // Drops
+    // Boss-specific death sequence
+    if (isBoss) {
+      this.handleBossDeath(enemy);
+      return;
+    }
+
+    // Regular enemy drops
     if (Math.random() < 0.15) this.dropHealth(enemy.x, enemy.y);
     if (Math.random() < 0.10) this.spawnPowerUp(enemy.x, enemy.y);
     if (Math.random() < 0.08) this.spawnChest(enemy.x, enemy.y);
 
-    // Death animation
-    enemy.play(this.enemyAnim(kind, 'death'));
+    // Death animation — use explosion magic effect
+    const hasExplosion = this.textures.exists('explosion-1');
+    if (hasExplosion) {
+      this.playMagicEffect('explosion', enemy.x, enemy.y, 70);
+    }
+
+    enemy.play(this.enemyAnim(kind as EnemyKind, 'death'));
     enemy.setTint(0xff3333);
     enemy.setData('speed', 0);
     enemy.setVelocity(0, 0);
@@ -1630,6 +1980,71 @@ export class GameScene extends Phaser.Scene {
           });
         }
         enemy.destroy();
+      }
+    });
+
+    this.checkAchievements();
+  }
+
+  private handleBossDeath(boss: Phaser.Physics.Arcade.Sprite) {
+    const bossKind = boss.getData('bossKind') as BossKind;
+
+    // 1) Slowmo effect
+    this.time.timeScale = 0.3;
+    this.time.delayedCall(600, () => { this.time.timeScale = 1; }); // Restore after ~2 real seconds
+
+    // 2) Boss death animation
+    const deathAnim = `boss-${bossKind}-death-anim`;
+    if (this.anims.exists(deathAnim)) boss.play(deathAnim, true);
+
+    // 3) Chain explosions
+    for (let i = 0; i < 5; i++) {
+      this.time.delayedCall(i * 150, () => {
+        const ox = boss.x + Phaser.Math.Between(-50, 50);
+        const oy = boss.y + Phaser.Math.Between(-50, 50);
+        this.playMagicEffect('explosion', ox, oy, 90);
+      });
+    }
+
+    // 4) Rock debris
+    this.playMagicEffect('rocks-fx', boss.x, boss.y, 100);
+
+    // 5) Screen flash + heavy shake
+    this.cameras.main.flash(300, 255, 255, 255);
+    this.cameras.main.shake(800, 0.04);
+
+    // 6) "BOSS DEFEATED!" text
+    const defeatText = this.add.text(320, 250, '💀 BOSS DEFEATED!', {
+      fontSize: '36px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
+    }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
+    this.tweens.add({ targets: defeatText, scale: 1.3, yoyo: true, duration: 400, repeat: 2 });
+    this.tweens.add({ targets: defeatText, alpha: 0, y: 220, duration: 3000, delay: 1500, onComplete: () => defeatText.destroy() });
+
+    // 7) Full HP restore text
+    const hpText = this.add.text(320, 300, '💚 FULL HP RESTORED!', {
+      fontSize: '24px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 4
+    }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
+    this.tweens.add({ targets: hpText, y: 280, alpha: 0, duration: 2500, delay: 500, onComplete: () => hpText.destroy() });
+
+    // 8) Guaranteed epic chest drop
+    this.spawnChest(boss.x, boss.y);
+
+    // 9) Remove boss and clean up
+    boss.setVelocity(0, 0);
+    boss.setData('speed', 0);
+    this.tweens.add({
+      targets: boss,
+      alpha: 0,
+      duration: 1000,
+      delay: 600,
+      onComplete: () => {
+        boss.destroy();
+        this.activeBoss = null;
+        this.destroyBossHPBar();
+        // Clear vignette
+        if (this.vignetteOverlay) {
+          this.tweens.add({ targets: this.vignetteOverlay, alpha: 0, duration: 500 });
+        }
       }
     });
 
@@ -1887,32 +2302,81 @@ export class GameScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
     this.playSfx('gameOver');
 
+    // Dramatic slowmo + screen shake
+    this.cameras.main.shake(600, 0.03);
+    this.cameras.main.flash(200, 200, 0, 0);
+
+    // Clean up boss if active
+    if (this.activeBoss) {
+      this.destroyBossHPBar();
+      this.activeBoss = null;
+    }
+
     const cx = this.cameras.main.width / 2;
     const cy = this.cameras.main.height / 2;
 
-    this.add.rectangle(0, 0, 640, 640, 0x000000, 0.6).setOrigin(0, 0).setDepth(2000).setScrollFactor(0);
+    // Dark overlay
+    const overlay = this.add.rectangle(0, 0, 640, 640, 0x000000, 0.75).setOrigin(0, 0).setDepth(2000).setScrollFactor(0);
+    overlay.setAlpha(0);
+    this.tweens.add({ targets: overlay, alpha: 1, duration: 600 });
 
-    this._gameOverText = this.add.text(cx, cy - 60, '💀 GAME OVER', {
-      fontSize: '44px', color: '#ff0000', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
-    }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+    // Death explosion effect
+    this.playMagicEffect('explosion', this.player.x, this.player.y, 120);
 
-    this.add.text(cx, cy, `Score: ${this.score}  |  Wave: ${this.currentWave}`, {
-      fontSize: '22px', color: '#fff', stroke: '#000', strokeThickness: 3
-    }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+    // Panel background
+    const panelW = 380, panelH = 340;
+    const panel = this.add.rectangle(cx, cy, panelW, panelH, 0x1a1a2e, 0.95).setDepth(2001).setScrollFactor(0)
+      .setStrokeStyle(3, 0xef4444);
+    panel.setScale(0);
+    this.tweens.add({ targets: panel, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
 
+    // Title
+    const title = this.add.text(cx, cy - 130, '💀 GAME OVER', {
+      fontSize: '38px', color: '#ef4444', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
+    }).setOrigin(0.5).setDepth(2002).setScrollFactor(0).setAlpha(0);
+    this.tweens.add({ targets: title, alpha: 1, duration: 300, delay: 500 });
+
+    // Stats
+    const statsY = cy - 70;
+    const statStyle = { fontSize: '16px', color: '#e5e7eb', stroke: '#000', strokeThickness: 2 };
+    const valStyle = { fontSize: '16px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 2 };
+
+    const statsData = [
+      ['Score:', `${this.score}`],
+      ['Wave Reached:', `${this.currentWave}`],
+      ['Enemies Slain:', `${this.totalKills}`],
+      ['Bosses Defeated:', `${this.bossesKilled}`],
+      ['Best Combo:', `${this.comboCount}x`],
+    ];
+
+    statsData.forEach((pair, i) => {
+      const row = this.add.text(cx - 140, statsY + i * 28, pair[0]!, statStyle)
+        .setDepth(2002).setScrollFactor(0).setAlpha(0);
+      const val = this.add.text(cx + 140, statsY + i * 28, pair[1]!, valStyle)
+        .setOrigin(1, 0).setDepth(2002).setScrollFactor(0).setAlpha(0);
+      this.tweens.add({ targets: [row, val], alpha: 1, duration: 200, delay: 600 + i * 80 });
+    });
+
+    // Equipment display
     const equipNames = Array.from(this.equipment.values()).map(e => e.name);
     if (equipNames.length > 0) {
-      this.add.text(cx, cy + 35, `Equipment: ${equipNames.join(', ')}`, {
-        fontSize: '14px', color: '#fbbf24', stroke: '#000', strokeThickness: 2
-      }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+      const eqText = this.add.text(cx, statsY + statsData.length * 28 + 10, `⚔️ ${equipNames.join(' | ')}`, {
+        fontSize: '13px', color: '#a78bfa', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(2002).setScrollFactor(0).setAlpha(0);
+      this.tweens.add({ targets: eqText, alpha: 1, duration: 200, delay: 1000 });
     }
 
-    this.add.text(cx, cy + 65, 'Press R to restart', {
-      fontSize: '16px', color: '#aaa'
-    }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+    // Restart hint
+    const restartText = this.add.text(cx, cy + 100, '[ R ] Restart', {
+      fontSize: '18px', color: '#9ca3af', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(2002).setScrollFactor(0).setAlpha(0);
+    this.tweens.add({ targets: restartText, alpha: 1, duration: 200, delay: 1100 });
+    this.tweens.add({ targets: restartText, alpha: 0.5, yoyo: true, repeat: -1, duration: 800, delay: 1300 });
 
     // Share to Reddit button
-    this.createShareButton(cx, cy + 110, this.score, this.currentWave, false);
+    this.time.delayedCall(1200, () => {
+      this.createShareButton(cx, cy + 135, this.score, this.currentWave, false);
+    });
 
     if (this.onGameOverCallback) {
       this.onGameOverCallback(this.score, Math.floor(this.player.x / 64), Math.floor(this.player.y / 64));
@@ -1924,20 +2388,72 @@ export class GameScene extends Phaser.Scene {
     this._won = true;
     this.playSfx('victory');
 
-    this._gameOverText = this.add.text(320, 270, '🏆 YOU WIN!', {
-      fontSize: '48px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
-    }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+    // Clean up boss
+    if (this.activeBoss) {
+      this.destroyBossHPBar();
+      this.activeBoss = null;
+    }
 
-    this.add.text(320, 320, `Final Score: ${this.score}`, {
-      fontSize: '22px', color: '#fff', stroke: '#000', strokeThickness: 3
-    }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+    const cx = this.cameras.main.width / 2;
+    const cy = this.cameras.main.height / 2;
 
-    this.add.text(320, 360, 'Press R to restart', {
-      fontSize: '16px', color: '#aaa'
-    }).setOrigin(0.5).setDepth(2001).setScrollFactor(0);
+    // Celebration effects
+    this.cameras.main.flash(400, 50, 200, 50);
+    for (let i = 0; i < 8; i++) {
+      this.time.delayedCall(i * 200, () => {
+        const fx = Phaser.Math.Between(0, 2);
+        const rx = Phaser.Math.Between(80, 560);
+        const ry = Phaser.Math.Between(80, 560);
+        if (fx === 0) this.playMagicEffect('explosion', rx, ry, 70);
+        else if (fx === 1) this.playMagicEffect('fire-ball', rx, ry, 60);
+        else this.playMagicEffect('portal-fx', rx, ry, 60);
+      });
+    }
 
-    // Share to Reddit button
-    this.createShareButton(320, 400, this.score, this.currentWave, true);
+    // Overlay
+    const overlay = this.add.rectangle(0, 0, 640, 640, 0x000000, 0.7).setOrigin(0, 0).setDepth(2000).setScrollFactor(0);
+    overlay.setAlpha(0);
+    this.tweens.add({ targets: overlay, alpha: 1, duration: 600 });
+
+    // Panel
+    const panelW = 400, panelH = 320;
+    const panel = this.add.rectangle(cx, cy, panelW, panelH, 0x0a1628, 0.95).setDepth(2001).setScrollFactor(0)
+      .setStrokeStyle(3, 0x22c55e);
+    panel.setScale(0);
+    this.tweens.add({ targets: panel, scale: 1, duration: 400, delay: 300, ease: 'Back.easeOut' });
+
+    // Title
+    const title = this.add.text(cx, cy - 120, '🏆 VICTORY!', {
+      fontSize: '44px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
+    }).setOrigin(0.5).setDepth(2002).setScrollFactor(0).setAlpha(0);
+    this.tweens.add({ targets: title, alpha: 1, duration: 300, delay: 500 });
+    this.tweens.add({ targets: title, scale: 1.05, yoyo: true, repeat: -1, duration: 1200 });
+
+    // Stats
+    const statsY = cy - 60;
+    const statStyle = { fontSize: '17px', color: '#e5e7eb', stroke: '#000', strokeThickness: 2 };
+    const valStyle = { fontSize: '17px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 2 };
+    const statsData = [
+      ['Final Score:', `${this.score}`],
+      ['Total Kills:', `${this.totalKills}`],
+      ['Bosses Defeated:', `${this.bossesKilled}`],
+    ];
+    statsData.forEach((pair, i) => {
+      const row = this.add.text(cx - 140, statsY + i * 30, pair[0]!, statStyle).setDepth(2002).setScrollFactor(0).setAlpha(0);
+      const val = this.add.text(cx + 140, statsY + i * 30, pair[1]!, valStyle).setOrigin(1, 0).setDepth(2002).setScrollFactor(0).setAlpha(0);
+      this.tweens.add({ targets: [row, val], alpha: 1, duration: 200, delay: 600 + i * 80 });
+    });
+
+    // Restart + share
+    const restartText = this.add.text(cx, cy + 70, '[ R ] Play Again', {
+      fontSize: '18px', color: '#9ca3af', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(2002).setScrollFactor(0).setAlpha(0);
+    this.tweens.add({ targets: restartText, alpha: 1, duration: 200, delay: 900 });
+    this.tweens.add({ targets: restartText, alpha: 0.5, yoyo: true, repeat: -1, duration: 800, delay: 1100 });
+
+    this.time.delayedCall(1000, () => {
+      this.createShareButton(cx, cy + 105, this.score, this.currentWave, true);
+    });
 
     if (this.onVictoryCallback) this.onVictoryCallback(this.score);
   }
@@ -2304,6 +2820,492 @@ export class GameScene extends Phaser.Scene {
         });
       }
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BOSS HP BAR (BOTTOM OF SCREEN)
+  // ═══════════════════════════════════════════════════════════════════════════
+  private createBossHPBar(template: BossTemplate, enraged: boolean) {
+    this.destroyBossHPBar();
+    const y = 548;
+    const barW = 500;
+    const barH = 14;
+    const cx = 320;
+
+    const barBg = this.add.rectangle(cx, y, barW + 6, barH + 6, 0x000000, 0.85)
+      .setDepth(1010).setScrollFactor(0);
+    const barBorder = this.add.rectangle(cx, y, barW + 6, barH + 6, 0x000000, 0)
+      .setStrokeStyle(2, template.barColor).setDepth(1011).setScrollFactor(0);
+    const barFill = this.add.rectangle(cx - barW / 2, y, barW, barH, template.barColor)
+      .setOrigin(0, 0.5).setDepth(1012).setScrollFactor(0);
+
+    const nameStr = `${template.emoji} ${template.name} — ${template.title} ${enraged ? '⚠️ ENRAGED' : ''}`;
+    const nameText = this.add.text(cx, y - 16, nameStr, {
+      fontSize: '13px', color: '#ffffff', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+    }).setOrigin(0.5).setDepth(1013).setScrollFactor(0);
+
+    const phaseText = this.add.text(cx + barW / 2, y - 16, 'Phase 1', {
+      fontSize: '11px', color: '#fbbf24', stroke: '#000', strokeThickness: 2
+    }).setOrigin(1, 0.5).setDepth(1013).setScrollFactor(0);
+
+    this.bossHPBarBg = barBg;
+    this.bossHPBarFill = barFill;
+    this.bossNameText = nameText;
+    this.bossPhaseText = phaseText;
+    this.bossBarContainer = [barBg, barBorder, barFill, nameText, phaseText];
+  }
+
+  private updateBossHPBar() {
+    if (!this.activeBoss || !this.bossHPBarFill) return;
+    const hp = this.activeBoss.getData('hp') || 0;
+    const maxHp = this.activeBoss.getData('maxHp') || 1;
+    const pct = Math.max(0, hp / maxHp);
+    this.bossHPBarFill.width = 500 * pct;
+    this.bossHPBarFill.setFillStyle(pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xf59e0b : 0xef4444);
+    if (this.bossPhaseText) this.bossPhaseText.setText(`Phase ${this.bossPhase}`);
+  }
+
+  private destroyBossHPBar() {
+    this.bossBarContainer.forEach(obj => obj.destroy());
+    this.bossBarContainer = [];
+    this.bossHPBarFill = undefined as any;
+    this.bossHPBarBg = undefined as any;
+    this.bossNameText = undefined as any;
+    this.bossPhaseText = undefined as any;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BOSS AI
+  // ═══════════════════════════════════════════════════════════════════════════
+  private updateBossAI(delta: number) {
+    const boss = this.activeBoss!;
+    if (!boss.active) { this.activeBoss = null; return; }
+
+    const hp = boss.getData('hp') || 0;
+    const maxHp = boss.getData('maxHp') || 1;
+    const kind = boss.getData('bossKind') as BossKind;
+    const speed = boss.getData('speed') || 100;
+    const dist = Phaser.Math.Distance.Between(boss.x, boss.y, this.player.x, this.player.y);
+
+    // Phase transition at 50% HP
+    if (this.bossPhase === 1 && hp <= maxHp * 0.5) {
+      this.bossPhase = 2;
+      this.cameras.main.flash(200, 255, 255, 255);
+      this.cameras.main.shake(400, 0.03);
+      boss.setTint(0xff6666);
+
+      const phaseTxt = this.add.text(320, 280, '⚠️ PHASE 2 — ENRAGED!', {
+        fontSize: '28px', color: '#ef4444', fontStyle: 'bold', stroke: '#000', strokeThickness: 5
+      }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
+      this.tweens.add({ targets: phaseTxt, alpha: 0, y: 250, duration: 2000, onComplete: () => phaseTxt.destroy() });
+
+      // Explosion effect on phase change
+      this.playMagicEffect('explosion', boss.x, boss.y, 100);
+    }
+
+    // Movement — chase player
+    if (dist > 30) {
+      const chaseSpeed = this.bossPhase === 2 ? speed * 1.3 : speed;
+      this.physics.moveToObject(boss, this.player, chaseSpeed);
+      boss.setFlipX(boss.x > this.player.x);
+
+      const animKey = `boss-${kind}-${this.bossPhase === 2 ? 'run' : 'walk'}-anim`;
+      const curAnim = boss.anims.currentAnim?.key;
+      if (curAnim !== animKey && !curAnim?.includes('attack') && !curAnim?.includes('hurt') && !curAnim?.includes('throw') && !curAnim?.includes('jump')) {
+        if (this.anims.exists(animKey)) boss.play(animKey, true);
+      }
+    }
+
+    // Boss ability timer
+    this.bossAbilityTimer -= delta;
+    if (this.bossAbilityTimer <= 0) {
+      this.executeBossAbility(boss, kind, dist);
+      const abilCD = this.bossPhase === 2 ? 2500 : 4000;
+      this.bossAbilityTimer = abilCD;
+    }
+
+    // Boss melee attack
+    if (dist < 50 && boss.getData('attackCooldown') <= 0) {
+      const atkAnim = `boss-${kind}-attack1-anim`;
+      if (this.anims.exists(atkAnim)) boss.play(atkAnim, true);
+
+      if (this.invincible <= 0 && !this.activePowerUps.has('shield')) {
+        const dmg = boss.getData('damage') || 15;
+        this.playerHP -= dmg;
+        this.cameras.main.shake(150, 0.02);
+        this.invincible = 600;
+        this.player.play(this.playerAnim('hurt'), true);
+        const dt = this.add.text(this.player.x, this.player.y - 40, `-${dmg}`, {
+          fontSize: '26px', color: '#ff0000', fontStyle: 'bold', stroke: '#000', strokeThickness: 5
+        }).setOrigin(0.5).setDepth(100);
+        this.tweens.add({ targets: dt, y: dt.y - 35, alpha: 0, duration: 800, onComplete: () => dt.destroy() });
+      }
+      boss.setData('attackCooldown', 1200);
+    }
+
+    let atkCD = boss.getData('attackCooldown') || 0;
+    if (atkCD > 0) boss.setData('attackCooldown', atkCD - delta);
+
+    // Update boss HP bar
+    this.updateBossHPBar();
+  }
+
+  private executeBossAbility(boss: Phaser.Physics.Arcade.Sprite, kind: BossKind, _dist: number) {
+    const abil = Phaser.Math.Between(1, this.bossPhase === 2 ? 4 : 3);
+
+    switch (kind) {
+      case 'pink': // BERSERKER
+        if (abil === 1) {
+          // Charge attack — run at player fast
+          const chargeAnim = `boss-${kind}-run-anim`;
+          if (this.anims.exists(chargeAnim)) boss.play(chargeAnim, true);
+          this.physics.moveToObject(boss, this.player, 350);
+          this.time.delayedCall(600, () => { if (boss.active) boss.setVelocity(0, 0); });
+          this.playMagicEffect('rocks-fx', boss.x, boss.y, 80);
+        } else if (abil === 2) {
+          // Rock throw
+          const throwAnim = `boss-${kind}-throw-anim`;
+          if (this.anims.exists(throwAnim)) boss.play(throwAnim, true);
+          this.time.delayedCall(200, () => {
+            if (!boss.active) return;
+            const rock = this.projectiles.create(boss.x, boss.y, `boss-${kind}-rock1`) as Phaser.Physics.Arcade.Sprite;
+            rock.setDisplaySize(24, 24).setDepth(12);
+            rock.setData('damage', boss.getData('damage'));
+            rock.setData('element', 'none');
+            rock.setData('isBossProjectile', true);
+            this.physics.moveToObject(rock, this.player, 300);
+            this.time.delayedCall(3000, () => { if (rock.active) rock.destroy(); });
+          });
+        } else if (abil === 3) {
+          // Ground pound — jump then earth spike
+          const jumpAnim = `boss-${kind}-jump-anim`;
+          if (this.anims.exists(jumpAnim)) boss.play(jumpAnim, true);
+          this.time.delayedCall(500, () => {
+            if (!boss.active) return;
+            this.cameras.main.shake(300, 0.03);
+            this.playMagicEffect('earth-spike', this.player.x, this.player.y, 90);
+            // Damage player if nearby
+            const d = Phaser.Math.Distance.Between(boss.x, boss.y, this.player.x, this.player.y);
+            if (d < 120 && this.invincible <= 0) {
+              this.playerHP -= Math.floor(boss.getData('damage') * 1.5);
+              this.invincible = 400;
+            }
+          });
+        } else {
+          // Phase 2: Walk+Attack frenzy
+          const frenzyAnim = `boss-${kind}-walk_attack-anim`;
+          if (this.anims.exists(frenzyAnim)) boss.play(frenzyAnim, true);
+          this.physics.moveToObject(boss, this.player, 250);
+          this.time.delayedCall(1000, () => { if (boss.active) boss.setVelocity(0, 0); });
+        }
+        break;
+
+      case 'owlet': // ARCHMAGE
+        if (abil === 1) {
+          // Fire ball barrage
+          const throwAnim = `boss-${kind}-throw-anim`;
+          if (this.anims.exists(throwAnim)) boss.play(throwAnim, true);
+          for (let i = 0; i < 3; i++) {
+            this.time.delayedCall(i * 200, () => {
+              if (!boss.active) return;
+              const angle = Phaser.Math.Angle.Between(boss.x, boss.y, this.player.x, this.player.y) + (i - 1) * 0.3;
+              this.spawnBossProjectile(boss, angle, 'fire-ball', 250);
+            });
+          }
+        } else if (abil === 2) {
+          // Tornado summon
+          const tile = this.floorTiles[Phaser.Math.Between(0, this.floorTiles.length - 1)];
+          if (tile) {
+            this.playMagicEffect('tornado-fx', tile.x, tile.y, 70, true, 5000);
+            // Damage in area over time
+            this.time.addEvent({
+              delay: 500, repeat: 9,
+              callback: () => {
+                const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, tile.x, tile.y);
+                if (d < 50 && this.invincible <= 0) {
+                  this.playerHP -= 5;
+                  this.invincible = 300;
+                }
+              }
+            });
+          }
+        } else if (abil === 3) {
+          // Teleport to random tile
+          const rTile = this.floorTiles[Phaser.Math.Between(0, this.floorTiles.length - 1)];
+          if (rTile) {
+            this.playMagicEffect('portal-fx', boss.x, boss.y, 80);
+            boss.setAlpha(0);
+            this.time.delayedCall(400, () => {
+              if (!boss.active) return;
+              boss.setPosition(rTile.x, rTile.y);
+              boss.setAlpha(1);
+              this.playMagicEffect('portal-fx', rTile.x, rTile.y, 80);
+            });
+          }
+        } else {
+          // Phase 2: Molten spear rain
+          for (let i = 0; i < 4; i++) {
+            this.time.delayedCall(i * 300, () => {
+              const tx = this.player.x + Phaser.Math.Between(-80, 80);
+              const ty = this.player.y + Phaser.Math.Between(-80, 80);
+              // Warning indicator
+              const warn = this.add.circle(tx, ty, 25, 0xff0000, 0.3).setDepth(5);
+              this.tweens.add({ targets: warn, scale: 0.5, alpha: 0.8, duration: 500, onComplete: () => {
+                warn.destroy();
+                this.playMagicEffect('molten-spear', tx, ty, 70);
+                const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, tx, ty);
+                if (d < 40 && this.invincible <= 0) {
+                  this.playerHP -= 12;
+                  this.invincible = 300;
+                }
+              }});
+            });
+          }
+        }
+        break;
+
+      case 'dude': // TITAN
+        if (abil === 1) {
+          // Heavy slam + earth spikes
+          const atkAnim = `boss-${kind}-attack2-anim`;
+          if (this.anims.exists(atkAnim)) boss.play(atkAnim, true);
+          this.time.delayedCall(400, () => {
+            if (!boss.active) return;
+            this.cameras.main.shake(400, 0.04);
+            for (let i = 0; i < 4; i++) {
+              const angle = (i / 4) * Math.PI * 2;
+              const sx = boss.x + Math.cos(angle) * 80;
+              const sy = boss.y + Math.sin(angle) * 80;
+              this.playMagicEffect('earth-spike', sx, sy, 70);
+            }
+            // Area damage
+            this.enemies.children.entries.forEach(() => {}); // no-op for enemies
+            const d = Phaser.Math.Distance.Between(boss.x, boss.y, this.player.x, this.player.y);
+            if (d < 120 && this.invincible <= 0) {
+              this.playerHP -= Math.floor(boss.getData('damage') * 1.2);
+              this.invincible = 500;
+            }
+          });
+        } else if (abil === 2) {
+          // Boulder push
+          const pushAnim = `boss-${kind}-push-anim`;
+          if (this.anims.exists(pushAnim)) boss.play(pushAnim, true);
+          this.time.delayedCall(300, () => {
+            if (!boss.active) return;
+            const angle = Phaser.Math.Angle.Between(boss.x, boss.y, this.player.x, this.player.y);
+            this.spawnBossProjectile(boss, angle, 'rocks-fx', 200);
+          });
+        } else if (abil === 3) {
+          // Stomp — speed boost all enemies
+          const jumpAnim = `boss-${kind}-jump-anim`;
+          if (this.anims.exists(jumpAnim)) boss.play(jumpAnim, true);
+          this.cameras.main.shake(500, 0.035);
+          this.enemies.children.entries.forEach((obj) => {
+            const e = obj as Phaser.Physics.Arcade.Sprite;
+            if (e.active && e !== boss) {
+              const spd = e.getData('speed') || 100;
+              e.setData('speed', spd * 1.3);
+              e.setTint(0xff8800);
+              this.time.delayedCall(5000, () => {
+                if (e.active) { e.setData('speed', spd); e.clearTint(); }
+              });
+            }
+          });
+        } else {
+          // Phase 2: Rock armor
+          boss.setTint(0x888888);
+          boss.setData('armor', true);
+          this.playMagicEffect('rocks-fx', boss.x, boss.y, 90, true, 8000);
+          this.time.delayedCall(8000, () => {
+            if (boss.active) { boss.clearTint(); boss.setData('armor', false); }
+          });
+        }
+        break;
+    }
+  }
+
+  private spawnBossProjectile(boss: Phaser.Physics.Arcade.Sprite, angle: number, effectName: string, speed: number) {
+    const proj = this.physics.add.sprite(boss.x, boss.y, `${effectName}-1`).setDisplaySize(48, 48).setDepth(12);
+    if (this.anims.exists(`${effectName}-anim`)) proj.play(`${effectName}-anim`);
+    proj.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+
+    // Boss projectile damages player
+    this.physics.add.overlap(proj, this.player, () => {
+      if (this.invincible <= 0 && !this.activePowerUps.has('shield')) {
+        const dmg = boss.getData('damage') || 15;
+        this.playerHP -= dmg;
+        this.invincible = 400;
+        this.cameras.main.shake(100, 0.015);
+        this.player.play(this.playerAnim('hurt'), true);
+        const dt = this.add.text(this.player.x, this.player.y - 40, `-${dmg}`, {
+          fontSize: '22px', color: '#ff0000', fontStyle: 'bold', stroke: '#000', strokeThickness: 4
+        }).setOrigin(0.5).setDepth(100);
+        this.tweens.add({ targets: dt, y: dt.y - 30, alpha: 0, duration: 700, onComplete: () => dt.destroy() });
+      }
+      proj.destroy();
+    });
+
+    this.physics.add.collider(proj, this.walls, () => proj.destroy());
+    this.time.delayedCall(4000, () => { if (proj.active) proj.destroy(); });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MAGIC EFFECT HELPER
+  // ═══════════════════════════════════════════════════════════════════════════
+  private playMagicEffect(name: string, x: number, y: number, size: number, persistent = false, duration = 1000): Phaser.GameObjects.Sprite | null {
+    const frameKey = `${name}-1`;
+    if (!this.textures.exists(frameKey)) return null;
+
+    const fx = this.add.sprite(x, y, frameKey).setDisplaySize(size, size).setDepth(99).setAlpha(0.85);
+    const animKey = `${name}-anim`;
+    const animExists = this.anims.exists(animKey);
+    const isLooping = animExists && this.anims.get(animKey).repeat === -1;
+
+    if (animExists) {
+      fx.play(animKey);
+      if (!persistent && !isLooping) {
+        // Non-looping animation: destroy when complete
+        fx.on('animationcomplete', () => {
+          this.tweens.add({ targets: fx, alpha: 0, duration: 200, onComplete: () => fx.destroy() });
+        });
+      }
+    }
+
+    if (persistent) {
+      // Persistent effects: destroy after explicit duration
+      this.time.delayedCall(duration, () => {
+        if (fx.active) this.tweens.add({ targets: fx, alpha: 0, duration: 300, onComplete: () => fx.destroy() });
+      });
+    } else if (isLooping || !animExists) {
+      // Looping animations or no animation: always destroy after duration
+      this.time.delayedCall(duration, () => {
+        if (fx.active) this.tweens.add({ targets: fx, alpha: 0, duration: 200, onComplete: () => fx.destroy() });
+      });
+    }
+    return fx;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TELEPORT SYSTEM
+  // ═══════════════════════════════════════════════════════════════════════════
+  private checkTeleport() {
+    if (this.teleportTiles.length < 2 || this.teleportCooldown > 0) return;
+
+    for (let i = 0; i < this.teleportTiles.length; i++) {
+      const tp = this.teleportTiles[i]!;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, tp.x, tp.y);
+      if (dist < 25) {
+        // Find the OTHER teleport tile
+        const dest = this.teleportTiles[(i + 1) % this.teleportTiles.length]!;
+
+        // Teleport effect at source
+        this.playMagicEffect('portal-fx', tp.x, tp.y, 80);
+
+        // Flash and teleport
+        this.player.setAlpha(0);
+        this.invincible = Math.max(this.invincible, 500);
+        this.time.delayedCall(200, () => {
+          this.player.setPosition(dest.x, dest.y);
+          this.player.setAlpha(1);
+          this.playMagicEffect('portal-fx', dest.x, dest.y, 80);
+          this.cameras.main.flash(200, 100, 50, 200);
+        });
+
+        this.teleportCooldown = 3000;
+        break;
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAUSE MENU
+  // ═══════════════════════════════════════════════════════════════════════════
+  private pauseGame() {
+    if (this.gameOver || this.isPaused) return;
+    this.isPaused = true;
+    this.physics.pause();
+
+    const cx = 320;
+    const cy = 280;
+
+    const overlay = this.add.rectangle(cx, cy, 640, 640, 0x000000, 0.7).setDepth(5000).setScrollFactor(0);
+    const title = this.add.text(cx, cy - 100, '⏸ PAUSED', {
+      fontSize: '36px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 5
+    }).setOrigin(0.5).setDepth(5001).setScrollFactor(0);
+
+    const stats = [
+      `Wave: ${this.currentWave}   Score: ${this.score}`,
+      `Kills: ${this.totalKills}   Bosses: ${this.bossesKilled}`,
+      `HP: ${Math.floor(this.playerHP)}/${this.maxHP + this.equipBonusHP}`,
+    ];
+    const statsTexts = stats.map((s, i) =>
+      this.add.text(cx, cy - 50 + i * 25, s, {
+        fontSize: '16px', color: '#ddd', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(5001).setScrollFactor(0)
+    );
+
+    // Equipment display
+    const equipLines: string[] = [];
+    this.equipment.forEach((item) => {
+      const ri: Record<string, string> = { common: '⬜', rare: '🔷', epic: '🔶' };
+      equipLines.push(`${ri[item.rarity]} ${item.name} (+${item.value} ${item.stat})`);
+    });
+    const equipHeader = this.add.text(cx, cy + 35, '🎒 Equipment:', {
+      fontSize: '14px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
+    }).setOrigin(0.5).setDepth(5001).setScrollFactor(0);
+    const equipTexts = equipLines.map((l, i) =>
+      this.add.text(cx, cy + 55 + i * 20, l || 'None', {
+        fontSize: '13px', color: '#ccc', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(5001).setScrollFactor(0)
+    );
+
+    // Resume button
+    const resumeY = cy + 130;
+    const resumeBtn = this.add.rectangle(cx, resumeY, 200, 40, 0x22c55e, 0.9)
+      .setDepth(5001).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    const resumeText = this.add.text(cx, resumeY, '▶ Resume (ESC)', {
+      fontSize: '16px', color: '#fff', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(5002).setScrollFactor(0);
+    resumeBtn.on('pointerover', () => resumeBtn.setFillStyle(0x16a34a));
+    resumeBtn.on('pointerout', () => resumeBtn.setFillStyle(0x22c55e));
+    resumeBtn.on('pointerdown', () => this.resumeGame());
+
+    this.pauseOverlay = [overlay, title, ...statsTexts, equipHeader, ...equipTexts, resumeBtn, resumeText];
+  }
+
+  private resumeGame() {
+    this.isPaused = false;
+    this.physics.resume();
+    this.pauseOverlay.forEach(obj => obj.destroy());
+    this.pauseOverlay = [];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VIGNETTE / SCREEN EFFECTS
+  // ═══════════════════════════════════════════════════════════════════════════
+  private updateVignette() {
+    if (!this.vignetteOverlay) return;
+
+    const effectiveMaxHP = this.maxHP + this.equipBonusHP;
+    const hpPct = this.playerHP / effectiveMaxHP;
+
+    // Low HP: red pulse
+    if (hpPct < 0.3 && hpPct > 0) {
+      const pulse = 0.15 + Math.sin(Date.now() / 300) * 0.1;
+      this.vignetteOverlay.setFillStyle(0xff0000, pulse);
+    }
+    // Boss active: colored vignette
+    else if (this.activeBoss && this.activeBoss.active) {
+      const bossColors: Record<BossKind, number> = { pink: 0xff69b4, owlet: 0x3b82f6, dude: 0xf59e0b };
+      this.vignetteOverlay.setFillStyle(bossColors[this.bossKind] || 0x000000, 0.08);
+    }
+    // High combo: gold tint
+    else if (this.comboCount >= 10) {
+      this.vignetteOverlay.setFillStyle(0xfbbf24, 0.06);
+    }
+    else {
+      this.vignetteOverlay.setAlpha(0);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
