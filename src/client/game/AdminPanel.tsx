@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface AdminPanelProps {
   isModerator?: boolean;
@@ -11,17 +11,23 @@ export function AdminPanel({ isModerator = false }: AdminPanelProps) {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Fetch current config on mount
-  useState(() => {
+  useEffect(() => {
     fetch('/admin/submission-post')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          console.warn('Admin endpoint not available');
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
-        if (data.postId) {
+        if (data?.postId) {
           setCurrentPostId(data.postId);
           setSubmissionPostId(data.postId);
         }
       })
       .catch(console.error);
-  });
+  }, []);
 
   const handleSetSubmissionPost = async () => {
     if (!submissionPostId.trim()) {
