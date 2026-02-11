@@ -9,7 +9,7 @@ function isMapValid(grid: number[][]): { valid: boolean; message: string } {
   // Find all floor tiles (0 = wall, 1 = floor in the display, but we store 0 as floor, 1 as wall)
   for (let i = 0; i < GRID_SIZE; i++) {
     for (let j = 0; j < GRID_SIZE; j++) {
-      if (grid[i][j] === 0) {
+      if (grid[i]?.[j] === 0) {
         floors.push([i, j]);
       }
     }
@@ -31,8 +31,8 @@ function isMapValid(grid: number[][]): { valid: boolean; message: string } {
   let openAreas = 0;
   for (let i = 0; i < GRID_SIZE - 1; i++) {
     for (let j = 0; j < GRID_SIZE - 1; j++) {
-      if (grid[i][j] === 0 && grid[i+1][j] === 0 && 
-          grid[i][j+1] === 0 && grid[i+1][j+1] === 0) {
+      if (grid[i]?.[j] === 0 && grid[i+1]?.[j] === 0 && 
+          grid[i]?.[j+1] === 0 && grid[i+1]?.[j+1] === 0) {
         openAreas++;
       }
     }
@@ -44,13 +44,21 @@ function isMapValid(grid: number[][]): { valid: boolean; message: string } {
   
   // Flood fill from first floor tile
   const visited = Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(false));
-  const queue: [number, number][] = [floors[0]];
-  visited[floors[0][0]][floors[0][1]] = true;
+  const firstFloor = floors[0];
+  if (!firstFloor) return { valid: false, message: '❌ No floor tiles found!' };
+  
+  const queue: [number, number][] = [firstFloor];
+  const [startRow, startCol] = firstFloor;
+  if (visited[startRow]?.[startCol] !== undefined) {
+    visited[startRow][startCol] = true;
+  }
   let reachableCount = 1;
   
   while (queue.length > 0) {
-    const [row, col] = queue.shift()!;
-    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    const current = queue.shift();
+    if (!current) continue;
+    const [row, col] = current;
+    const directions: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     
     for (const [dr, dc] of directions) {
       const newRow = row + dr;
@@ -59,8 +67,8 @@ function isMapValid(grid: number[][]): { valid: boolean; message: string } {
       if (
         newRow >= 0 && newRow < GRID_SIZE &&
         newCol >= 0 && newCol < GRID_SIZE &&
-        !visited[newRow][newCol] &&
-        grid[newRow][newCol] === 0
+        visited[newRow]?.[newCol] === false &&
+        grid[newRow]?.[newCol] === 0
       ) {
         visited[newRow][newCol] = true;
         queue.push([newRow, newCol]);
