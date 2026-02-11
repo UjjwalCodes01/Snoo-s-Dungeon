@@ -1,1 +1,52 @@
 @import 'tailwindcss';
+
+/* Grassy Nature Theme - Custom Styles */
+
+/* Smooth scrolling for mobile */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Optimized for mobile touch */
+body {
+  -webkit-tap-highlight-color: rgba(34, 197, 94, 0.2);
+  touch-action: manipulation;
+}
+
+/* Nature-themed animations */
+@keyframes scanline {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+
+@keyframes leaf-fall {
+  0% { transform: translateY(-10px) rotate(0deg); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+}
+
+/* Pixel perfect rendering for game sprites */
+canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Mobile-optimized button touches */
+button {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Ensure mobile viewport doesn't zoom */
+input, textarea, select {
+  font-size: 16px !important;
+}
+
+/* Smooth transitions for mobile */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

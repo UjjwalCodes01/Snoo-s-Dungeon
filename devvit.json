@@ -1,6 +1,6 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
-  "name": "snoo-dungeon",
+  "name": "snooss-dungeon",
   "post": {
     "dir": "dist/client",
     "entrypoints": {
@@ -46,6 +46,6 @@
     "redis": true
   },
   "dev": {
-    "subreddit": "snoos_dungeon_dev"
+    "subreddit": "snooss_dungeon_dev"
   }
 }

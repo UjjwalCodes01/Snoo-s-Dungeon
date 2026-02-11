@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { Howl } from 'howler';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type PlayerClass = 'warrior' | 'rogue' | 'dark-knight';
@@ -222,7 +223,8 @@ export class GameScene extends Phaser.Scene {
   }> = new Map();
 
   // ── Sound ──
-  private sfx: Record<string, () => void> = {};
+  private sfx: Record<string, Howl> = {};
+  private bgMusic?: Howl;
   private soundEnabled = true;
   private badgeQueue: { title: string; desc: string }[] = [];
   private badgeShowing = false;
@@ -668,7 +670,7 @@ export class GameScene extends Phaser.Scene {
 
     this.waveStartHP = this.playerHP;
     this.waveStartTime = Date.now();
-    this.generateSfx();
+    this.initializeSounds();
     this.fetchGhosts();
   }
 
@@ -2896,82 +2898,82 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PROCEDURAL SOUND EFFECTS (Web Audio API)
+  // HOWLER.JS SOUND EFFECTS
   // ═══════════════════════════════════════════════════════════════════════════
-  private generateSfx() {
-    // Access Web Audio context (only available with WebAudioSoundManager)
-    const soundManager = this.sound as any;
-    if (!soundManager.context) return;
-    const ctx = soundManager.context as AudioContext;
-
-    // Helper to create simple procedural sounds
-    const createOscSound = (freq: number, duration: number, type: OscillatorType = 'square', slide?: number) => {
-      return () => {
-        if (!this.soundEnabled) return;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, ctx.currentTime);
-        if (slide) {
-          osc.frequency.exponentialRampToValueAtTime(slide, ctx.currentTime + duration);
-        }
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + duration);
-      };
-    };
-
-    const createNoiseSound = (duration: number, lowpass: number) => {
-      return () => {
-        if (!this.soundEnabled) return;
-        const bufferSize = ctx.sampleRate * duration;
-        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          data[i] = Math.random() * 2 - 1;
-        }
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = lowpass;
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(ctx.destination);
-        source.start();
-      };
-    };
-
+  private initializeSounds() {
+    // Initialize Howler.js with EPIC retro sound effects
+    // Increased volumes for maximum impact and energy
     this.sfx = {
-      attack: createNoiseSound(0.08, 2000),
-      hit: createOscSound(200, 0.05, 'square', 100),
-      kill: createOscSound(400, 0.15, 'sawtooth', 100),
-      dash: createNoiseSound(0.12, 4000),
-      wave: createOscSound(440, 0.3, 'sine', 880),
-      boss: createOscSound(80, 0.4, 'sawtooth', 40),
-      gameOver: createOscSound(300, 0.5, 'sawtooth', 50),
-      victory: () => {
-        if (!this.soundEnabled) return;
-        [523, 659, 784, 1047].forEach((f, i) => {
-          setTimeout(() => createOscSound(f, 0.2, 'sine')(), i * 100);
-        });
-      },
-      pickup: createOscSound(600, 0.1, 'sine', 1200)
+      attack: new Howl({
+        src: ['sounds/attack.ogg', 'sounds/attack.mp3'],
+        volume: 0.6,  // Punchy sword slash
+        html5: true
+      }),
+      hit: new Howl({
+        src: ['sounds/hit.ogg', 'sounds/hit.mp3'],
+        volume: 0.7,  // Strong impact
+        html5: true
+      }),
+      kill: new Howl({
+        src: ['sounds/kill.ogg', 'sounds/kill.mp3'],
+        volume: 0.8,  // Dramatic kill sound
+        html5: true
+      }),
+      dash: new Howl({
+        src: ['sounds/dash.ogg', 'sounds/dash.mp3'],
+        volume: 0.6,  // Powerful whoosh
+        html5: true
+      }),
+      wave: new Howl({
+        src: ['sounds/wave.ogg', 'sounds/wave.mp3'],
+        volume: 0.9,  // Triumphant fanfare
+        html5: true
+      }),
+      boss: new Howl({
+        src: ['sounds/boss.ogg', 'sounds/boss.mp3'],
+        volume: 1.0,  // EPIC boss entrance
+        html5: true
+      }),
+      gameOver: new Howl({
+        src: ['sounds/gameOver.ogg', 'sounds/gameOver.mp3'],
+        volume: 0.9,  // Dramatic failure
+        html5: true
+      }),
+      victory: new Howl({
+        src: ['sounds/victory.ogg', 'sounds/victory.mp3'],
+        volume: 1.0,  // EPIC WIN
+        html5: true
+      }),
+      pickup: new Howl({
+        src: ['sounds/pickup.ogg', 'sounds/pickup.mp3'],
+        volume: 0.7,  // Satisfying collect
+        html5: true
+      })
     };
+
+    // Global Howler settings
+    if (typeof Howler !== 'undefined') {
+      Howler.autoUnlock = true; // Auto-unlock audio on mobile
+      Howler.html5PoolSize = 10; // Pool size for HTML5 Audio instances
+    }
+
+    // Initialize EPIC background music (looping)
+    this.bgMusic = new Howl({
+      src: ['sounds/bgmusic.ogg', 'sounds/bgmusic.mp3'],
+      volume: 0.15,  // Slightly quieter so sound effects can shine
+      loop: true,
+      html5: true,
+      autoplay: true
+    });
   }
 
   private playSfx(name: string) {
     if (this.soundEnabled && this.sfx[name]) {
       try {
-        this.sfx[name]();
+        this.sfx[name].play();
       } catch (e) {
-        // Silently ignore audio errors
+        // Silently ignore audio errors (file not found, etc.)
+        console.warn(`Sound '${name}' failed to play:`, e);
       }
     }
   }

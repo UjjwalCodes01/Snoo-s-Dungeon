@@ -44,7 +44,7 @@ const RankBadge = ({ rank }: { rank: number }) => {
     return <span className="text-3xl" style={{ filter: 'drop-shadow(0 0 6px rgba(205, 127, 50, 0.6))' }}>🥉</span>;
   }
   return (
-    <span className="w-8 h-8 flex items-center justify-center bg-gray-600/50 rounded-full text-sm font-bold text-gray-300">
+    <span className="w-8 h-8 flex items-center justify-center bg-slate-200 rounded-full text-sm font-bold text-gray-700">
       {rank}
     </span>
   );
@@ -58,13 +58,13 @@ const PlayerRow = ({ player, index, isCurrentUser }: { player: LeaderboardEntry;
     <div
       className={`relative flex items-center justify-between p-3 rounded-xl transition-all duration-300 cursor-pointer overflow-hidden ${
         player.rank === 1
-          ? 'bg-gradient-to-r from-yellow-500/20 via-amber-500/15 to-yellow-500/20 border border-yellow-500/30'
+          ? 'bg-gradient-to-r from-yellow-100 via-amber-50 to-yellow-100 border-2 border-yellow-400 shadow-md'
           : player.rank === 2
-          ? 'bg-gradient-to-r from-gray-400/20 via-gray-300/15 to-gray-400/20 border border-gray-400/30'
+          ? 'bg-gradient-to-r from-gray-100 via-slate-50 to-gray-100 border-2 border-gray-400 shadow-md'
           : player.rank === 3
-          ? 'bg-gradient-to-r from-orange-600/20 via-amber-600/15 to-orange-600/20 border border-orange-500/30'
-          : 'bg-gray-800/50 border border-gray-700/50 hover:border-gray-600'
-      } ${isCurrentUser ? 'ring-2 ring-orange-500 ring-offset-2 ring-offset-gray-900' : ''}`}
+          ? 'bg-gradient-to-r from-orange-100 via-amber-50 to-orange-100 border-2 border-orange-400 shadow-md'
+          : 'bg-white border border-green-300 hover:border-green-400 hover:shadow-md'
+      } ${isCurrentUser ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-green-50' : ''}`}
       style={{
         animationDelay: `${index * 50}ms`,
         transform: isHovered ? 'scale(1.02) translateX(4px)' : 'scale(1)',
@@ -83,16 +83,16 @@ const PlayerRow = ({ player, index, isCurrentUser }: { player: LeaderboardEntry;
         <RankBadge rank={player.rank} />
         <div className="flex flex-col">
           <span className={`font-semibold ${
-            player.rank === 1 ? 'text-yellow-300' :
-            player.rank === 2 ? 'text-gray-300' :
-            player.rank === 3 ? 'text-orange-300' :
-            'text-white'
+            player.rank === 1 ? 'text-yellow-700' :
+            player.rank === 2 ? 'text-gray-700' :
+            player.rank === 3 ? 'text-orange-700' :
+            'text-gray-800'
           }`}>
             {player.username}
-            {isCurrentUser && <span className="ml-2 text-xs text-orange-400">(You)</span>}
+            {isCurrentUser && <span className="ml-2 text-xs text-green-600">(You)</span>}
           </span>
           {player.rank <= 3 && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-600">
               {player.rank === 1 ? '👑 Champion' : player.rank === 2 ? '⚔️ Runner-up' : '🛡️ Third Place'}
             </span>
           )}
@@ -101,14 +101,14 @@ const PlayerRow = ({ player, index, isCurrentUser }: { player: LeaderboardEntry;
       
       <div className="flex items-center gap-2 relative z-10">
         <span className={`text-xl font-black ${
-          player.rank === 1 ? 'text-yellow-400' :
-          player.rank === 2 ? 'text-gray-300' :
-          player.rank === 3 ? 'text-orange-400' :
-          'text-orange-500'
+          player.rank === 1 ? 'text-yellow-600' :
+          player.rank === 2 ? 'text-gray-600' :
+          player.rank === 3 ? 'text-orange-600' :
+          'text-green-600'
         }`}>
           <AnimatedNumber value={player.score} />
         </span>
-        <span className="text-xs text-gray-500">pts</span>
+        <span className="text-xs text-gray-600">pts</span>
       </div>
     </div>
   );
@@ -156,14 +156,14 @@ export function Leaderboard() {
 
   if (loading) {
     return (
-      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 shadow-2xl border border-gray-700/50">
+      <div className="bg-white rounded-2xl p-6 shadow-lg border-2 border-green-500">
         <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-700 rounded-lg w-2/3"></div>
+          <div className="h-8 bg-green-200 rounded-lg w-2/3"></div>
           {[...Array(5)].map((_, i) => (
             <div key={i} className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-700 rounded-full"></div>
-              <div className="flex-1 h-6 bg-gray-700 rounded"></div>
-              <div className="w-16 h-6 bg-gray-700 rounded"></div>
+              <div className="w-10 h-10 bg-green-200 rounded-full"></div>
+              <div className="flex-1 h-6 bg-green-100 rounded"></div>
+              <div className="w-16 h-6 bg-green-100 rounded"></div>
             </div>
           ))}
         </div>
@@ -173,17 +173,17 @@ export function Leaderboard() {
 
   if (error && !data) {
     return (
-      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 border border-gray-700/50">
+      <div className="bg-white rounded-2xl p-6 border-2 border-green-500 shadow-lg">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-2xl">🏆</span>
-          <h2 className="text-xl font-bold text-white">Leaderboard</h2>
+          <h2 className="text-xl font-bold text-gray-800">Leaderboard</h2>
         </div>
         <div className="text-center py-8">
           <div className="text-4xl mb-3 opacity-40">📊</div>
-          <p className="text-gray-400 text-sm">{error}</p>
+          <p className="text-gray-600 text-sm">{error}</p>
           <button 
             onClick={() => { failCountRef.current = 0; fetchLeaderboard(true); }}
-            className="mt-3 text-sm text-orange-400 hover:text-orange-300 transition-colors"
+            className="mt-3 text-sm text-green-600 hover:text-green-700 transition-colors font-medium"
           >
             🔄 Retry
           </button>
@@ -193,30 +193,30 @@ export function Leaderboard() {
   }
 
   return (
-    <div className="bg-gradient-to-br from-gray-900 via-gray-850 to-gray-900 rounded-2xl p-5 shadow-2xl border border-gray-700/50 relative overflow-hidden">
+    <div className="bg-white rounded-2xl p-5 shadow-lg border-2 border-green-500 relative overflow-hidden">
       {/* Background decoration */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 left-0 w-24 h-24 bg-purple-500/5 rounded-full blur-3xl" />
+      <div className="absolute top-0 right-0 w-32 h-32 bg-green-400/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 left-0 w-24 h-24 bg-emerald-400/10 rounded-full blur-3xl" />
       
       {/* Header */}
       <div className="flex items-center justify-between mb-4 relative z-10">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🏆</span>
           <div>
-            <h2 className="text-xl font-bold text-white">Leaderboard</h2>
-            <p className="text-xs text-gray-500">Today's top dungeon delvers</p>
+            <h2 className="text-xl font-bold text-gray-800">Leaderboard</h2>
+            <p className="text-xs text-gray-600">Today's top dungeon delvers</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <div className="flex items-center gap-1 text-sm text-gray-400">
+            <div className="flex items-center gap-1 text-sm text-gray-700">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
               <span>{data?.totalPlayers || 0} playing</span>
             </div>
           </div>
           <button
             onClick={() => fetchLeaderboard(true)}
-            className={`p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-all ${isRefreshing ? 'animate-spin' : ''}`}
+            className={`p-2 rounded-lg bg-green-100 hover:bg-green-200 border border-green-300 transition-all ${isRefreshing ? 'animate-spin' : ''}`}
             disabled={isRefreshing}
           >
             <span className="text-lg">🔄</span>
@@ -239,30 +239,30 @@ export function Leaderboard() {
       ) : (
         <div className="text-center py-12 relative z-10">
           <div className="text-5xl mb-4 opacity-50">🎮</div>
-          <p className="text-gray-400 font-medium">No scores yet today!</p>
-          <p className="text-gray-600 text-sm mt-1">Be the first to conquer the dungeon</p>
+          <p className="text-gray-700 font-medium">No scores yet today!</p>
+          <p className="text-gray-500 text-sm mt-1">Be the first to conquer the dungeon</p>
         </div>
       )}
 
       {/* User's rank if not in top 10 */}
       {data?.userRank && data.userRank > 10 && (
-        <div className="mt-4 pt-4 border-t border-gray-700/50 relative z-10">
-          <div className="flex items-center justify-between p-3 bg-orange-500/10 rounded-xl border border-orange-500/30">
+        <div className="mt-4 pt-4 border-t-2 border-green-200 relative z-10">
+          <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl border-2 border-green-300">
             <div className="flex items-center gap-3">
-              <span className="w-8 h-8 flex items-center justify-center bg-orange-600/50 rounded-full text-sm font-bold text-orange-200">
+              <span className="w-8 h-8 flex items-center justify-center bg-green-200 rounded-full text-sm font-bold text-green-800">
                 {data.userRank}
               </span>
-              <span className="text-orange-200 font-medium">Your Rank</span>
+              <span className="text-green-800 font-medium">Your Rank</span>
             </div>
-            <span className="text-orange-400 text-sm">Keep playing to climb! 💪</span>
+            <span className="text-green-700 text-sm">Keep playing to climb! 💪</span>
           </div>
         </div>
       )}
 
       {/* Motivational footer */}
-      <div className="mt-4 text-center text-xs text-gray-600 relative z-10">
+      <div className="mt-4 text-center text-xs text-gray-500 relative z-10">
         <span>🔥 </span>
-        <span className="text-gray-500">Leaderboard resets daily at midnight UTC</span>
+        <span className="text-gray-600">Leaderboard resets daily at midnight UTC</span>
       </div>
     </div>
   );

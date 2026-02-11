@@ -29,11 +29,11 @@ const Tile = ({ isWall, isStart, isEnd, hasMonster, delay }: {
         !animated ? 'scale-0 opacity-0' : 'scale-100 opacity-100'
       } ${
         isWall
-          ? 'bg-gray-800 shadow-inner'
-          : 'bg-gradient-to-br from-orange-500 to-amber-600 shadow-md'
+          ? 'bg-slate-700 shadow-inner'
+          : 'bg-gradient-to-br from-green-400 to-emerald-500 shadow-md'
       }`}
       style={{
-        boxShadow: !isWall ? 'inset 0 1px 2px rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.3)' : undefined,
+        boxShadow: !isWall ? 'inset 0 1px 2px rgba(255,255,255,0.3), 0 2px 4px rgba(0,0,0,0.2)' : undefined,
       }}
     >
       {isStart && !isWall && (
@@ -357,31 +357,31 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
   // Show preview by default or when button clicked
   return (
     <div 
-      className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl overflow-hidden shadow-2xl border border-gray-700/50 relative"
+      className="bg-white rounded-2xl overflow-hidden shadow-2xl border-2 border-green-500 relative"
     >
       {/* Glow effect */}
-      <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-transparent to-purple-500/10 opacity-50" />
+      <div className="absolute inset-0 bg-gradient-to-r from-green-400/10 via-emerald-300/10 to-blue-400/10 opacity-50" />
       
       {/* Header */}
-      <div className="relative bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 p-5">
+      <div className="relative bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 p-4 sm:p-5">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml,...')] opacity-10" />
         <div className="relative z-10">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-black text-white flex items-center gap-2">
-                <span className="text-3xl">🎮</span> Today's Dungeon
+              <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
+                <span className="text-2xl sm:text-3xl">🌿</span> Today's Dungeon
               </h2>
-              <p className="text-orange-100 text-sm mt-1">
+              <p className="text-green-50 text-xs sm:text-sm mt-1">
                 Can you survive?
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-white/20 rounded-full text-sm text-white backdrop-blur-sm">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="hidden sm:inline px-3 py-1 bg-white/20 rounded-full text-sm text-white backdrop-blur-sm">
                 10×10 Grid
               </span>
               <button
                 onClick={handlePlayClick}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition-all transform hover:scale-105 shadow-lg"
+                className="flex-1 sm:flex-initial px-4 py-2 bg-white hover:bg-green-50 text-green-600 rounded-lg font-bold transition-all transform hover:scale-105 shadow-lg"
               >
                 ▶ Play Now
               </button>
@@ -391,10 +391,10 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
       </div>
         
         {/* Dungeon Grid Preview */}
-        <div className="p-6 bg-gray-900 relative">
+        <div className="p-6 bg-gradient-to-b from-sky-100 to-green-50 relative">
           <div className="flex justify-center">
             <div 
-              className="grid gap-1 bg-gray-950 p-2 rounded-xl border border-gray-700/50 shadow-inner"
+              className="grid gap-1 bg-green-200/50 p-2 rounded-xl border-2 border-green-400 shadow-inner"
               style={{ 
                 gridTemplateColumns: `repeat(${gridSize}, 1fr)`,
                 width: 'min(100%, 360px)',
@@ -422,83 +422,83 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
           </div>
           
           {/* Legend */}
-          <div className="flex justify-center gap-6 mt-4 text-xs text-gray-500">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-orange-500 rounded"></span> Floor</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-gray-800 rounded"></span> Wall</span>
+          <div className="flex justify-center gap-6 mt-4 text-xs text-gray-700">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-400 rounded"></span> Floor</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-slate-700 rounded"></span> Wall</span>
             <span className="flex items-center gap-1">🧙 Start</span>
             <span className="flex items-center gap-1">🚪 Exit</span>
           </div>
         </div>
 
         {/* Monster & Modifier Info */}
-        <div className="grid grid-cols-2 gap-4 p-5 bg-gray-800/50">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 sm:p-5 bg-green-50">
           {/* Monster Card */}
-          <div className={`bg-gradient-to-br from-red-900/50 to-gray-900 rounded-xl p-4 border border-red-500/30 transition-transform ${pulseMonster ? 'scale-105' : ''}`}>
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-4xl" style={{ filter: 'drop-shadow(0 0 10px rgba(255,0,0,0.5))' }}>
+          <div className={`bg-gradient-to-br from-red-100 to-red-50 rounded-xl p-3 sm:p-4 border-2 border-red-400 shadow-lg transition-transform ${pulseMonster ? 'scale-105' : ''}`}>
+            <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+              <span className="text-3xl sm:text-4xl" style={{ filter: 'drop-shadow(0 2px 4px rgba(220,38,38,0.3))' }}>
                 {monster === 'Dragon' ? '🐉' : monster === 'Skeleton' ? '💀' : monster === 'Slime' ? '🟢' : '👹'}
               </span>
               <div>
-                <p className="font-bold text-white text-lg">{monster}</p>
-                <p className="text-xs text-red-400">Today's Enemy</p>
+                <p className="font-bold text-red-900 text-base sm:text-lg">{monster}</p>
+                <p className="text-xs text-red-600">Today's Enemy</p>
               </div>
             </div>
-            <div className="space-y-2 text-sm">
+            <div className="space-y-1.5 sm:space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">❤️ Health</span>
-                <span className="text-red-400 font-bold">{stats.hp}</span>
+                <span className="text-gray-700">❤️ Health</span>
+                <span className="text-red-600 font-bold">{stats.hp}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">⚔️ Damage</span>
-                <span className="text-orange-400 font-bold">{stats.dmg}</span>
+                <span className="text-gray-700">⚔️ Damage</span>
+                <span className="text-orange-600 font-bold">{stats.dmg}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">💨 Speed</span>
-                <span className="text-yellow-400 font-bold">{stats.speed}</span>
+                <span className="text-gray-700">💨 Speed</span>
+                <span className="text-amber-600 font-bold">{stats.speed}</span>
               </div>
             </div>
           </div>
 
           {/* Modifier Card */}
-          <div className="bg-gradient-to-br from-purple-900/50 to-gray-900 rounded-xl p-4 border border-purple-500/30">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-4xl">✨</span>
+          <div className="bg-gradient-to-br from-purple-100 to-purple-50 rounded-xl p-3 sm:p-4 border-2 border-purple-400 shadow-lg">
+            <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+              <span className="text-3xl sm:text-4xl">✨</span>
               <div>
-                <p className="font-bold text-white text-lg">{modifier}</p>
-                <p className="text-xs text-purple-400">Active Modifier</p>
+                <p className="font-bold text-purple-900 text-base sm:text-lg">{modifier}</p>
+                <p className="text-xs text-purple-600">Active Modifier</p>
               </div>
             </div>
-            <p className="text-sm text-gray-400">{modifierDesc[modifier] || modifierDesc['Normal']}</p>
-            <div className="mt-3 flex items-center gap-2">
-              <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></span>
-              <span className="text-xs text-purple-300">Effect Active</span>
+            <p className="text-sm text-gray-700">{modifierDesc[modifier] || modifierDesc['Normal']}</p>
+            <div className="mt-2 sm:mt-3 flex items-center gap-2">
+              <span className="w-2 h-2 bg-purple-600 rounded-full animate-pulse"></span>
+              <span className="text-xs text-purple-700">Effect Active</span>
             </div>
           </div>
         </div>
 
         {/* Play Button */}
-        <div className="p-5 bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 relative overflow-hidden cursor-pointer hover:brightness-110 transition-all">
-            <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-[shimmer_3s_infinite]" />
-            <button
-              onClick={handlePlayClick}
-              className="relative z-10 w-full text-center"
-            >
-              <p className="font-black text-white text-2xl mb-1">▶ PLAY NOW!</p>
-              <p className="text-green-100 text-sm">
-                Powered by Phaser 3 • Click to start
-              </p>
-            </button>
-          </div>
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 relative overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-[shimmer_3s_infinite]" />
+          <button
+            onClick={handlePlayClick}
+            className="relative z-10 w-full text-center py-2 hover:scale-105 transition-transform"
+          >
+            <p className="font-black text-white text-xl sm:text-2xl mb-1">▶ PLAY NOW!</p>
+            <p className="text-green-50 text-xs sm:text-sm">
+              Powered by Phaser 3
+            </p>
+          </button>
+        </div>
 
         {/* Controls Hint */}
-        <div className="p-3 bg-gray-900 border-t border-gray-700/50">
-          <div className="flex justify-center gap-4 text-xs text-gray-500 flex-wrap">
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-400">WASD</kbd> Move</span>
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-400">Space</kbd> Attack</span>
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-400">Shift</kbd> Dash</span>
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-400">E</kbd> Area</span>
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-400">Q</kbd> Arrow</span>
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-400">R</kbd> Restart</span>
+        <div className="p-2 sm:p-3 bg-green-50 border-t-2 border-green-200">
+          <div className="flex justify-center gap-1.5 sm:gap-3 text-[10px] sm:text-xs text-gray-600 flex-wrap">
+            <span className="flex items-center gap-0.5 sm:gap-1"><kbd className="px-1 sm:px-1.5 py-0.5 bg-white border border-green-300 rounded text-gray-700 font-medium">WASD</kbd> <span className="hidden sm:inline">Move</span></span>
+            <span className="flex items-center gap-0.5 sm:gap-1"><kbd className="px-1 sm:px-1.5 py-0.5 bg-white border border-green-300 rounded text-gray-700 font-medium">Space</kbd> <span className="hidden sm:inline">Attack</span></span>
+            <span className="flex items-center gap-0.5 sm:gap-1"><kbd className="px-1 sm:px-1.5 py-0.5 bg-white border border-green-300 rounded text-gray-700 font-medium">Shift</kbd> <span className="hidden sm:inline">Dash</span></span>
+            <span className="flex items-center gap-0.5 sm:gap-1"><kbd className="px-1 sm:px-1.5 py-0.5 bg-white border border-green-300 rounded text-gray-700 font-medium">E</kbd> <span className="hidden sm:inline">Area</span></span>
+            <span className="flex items-center gap-0.5 sm:gap-1"><kbd className="px-1 sm:px-1.5 py-0.5 bg-white border border-green-300 rounded text-gray-700 font-medium">Q</kbd> <span className="hidden sm:inline">Arrow</span></span>
+            <span className="flex items-center gap-0.5 sm:gap-1"><kbd className="px-1 sm:px-1.5 py-0.5 bg-white border border-green-300 rounded text-gray-700 font-medium">R</kbd> <span className="hidden sm:inline">Restart</span></span>
           </div>
         </div>
 

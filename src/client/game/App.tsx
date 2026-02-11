@@ -55,44 +55,44 @@ const useCountdown = () => {
   return timeLeft;
 };
 
-// Time unit display component
+// Time unit display component - Nature style
 const TimeUnit = ({ value, label }: { value: number; label: string }) => (
   <div className="flex flex-col items-center">
-    <div className="bg-gray-800/80 backdrop-blur rounded-lg px-3 py-2 min-w-[3rem] border border-gray-700/50">
-      <span className="text-2xl font-mono font-bold text-white">
+    <div className="bg-white/70 backdrop-blur rounded-lg px-2 md:px-3 py-2 min-w-[2.5rem] md:min-w-[3rem] border-2 border-green-500/40">
+      <span className="text-xl md:text-2xl font-mono font-bold text-green-800">
         {value.toString().padStart(2, '0')}
       </span>
     </div>
-    <span className="text-[10px] text-gray-500 mt-1 uppercase tracking-wider">{label}</span>
+    <span className="text-[9px] md:text-[10px] text-green-700 mt-1 uppercase tracking-wider">{label}</span>
   </div>
 );
 
-// Challenge card component
+// Challenge card component - Nature style
 const ChallengeCard = ({ icon, label, value, color }: { icon: string; label: string; value: string; color: string }) => (
-  <div className={`relative bg-gradient-to-br ${color} rounded-xl p-4 border border-white/10 overflow-hidden group hover:scale-105 transition-transform cursor-default`}>
-    <div className="absolute top-0 right-0 text-6xl opacity-10 -mr-2 -mt-2 group-hover:opacity-20 transition-opacity">
+  <div className={`relative bg-gradient-to-br ${color} rounded-xl p-3 md:p-4 border-2 border-green-500/30 overflow-hidden group hover:scale-105 transition-transform cursor-default shadow-lg`}>
+    <div className="absolute top-0 right-0 text-4xl md:text-6xl opacity-10 -mr-2 -mt-2 group-hover:opacity-20 transition-opacity">
       {icon}
     </div>
     <div className="relative z-10">
-      <span className="text-3xl mb-2 block">{icon}</span>
-      <p className="text-white/60 text-xs uppercase tracking-wider">{label}</p>
-      <p className="text-white font-bold text-lg">{value}</p>
+      <span className="text-2xl md:text-3xl mb-1 md:mb-2 block">{icon}</span>
+      <p className="text-green-700 text-[10px] md:text-xs uppercase tracking-wider font-semibold">{label}</p>
+      <p className="text-green-900 font-bold text-sm md:text-lg">{value}</p>
     </div>
   </div>
 );
 
-// Tab button component  
+// Tab button component - Nature style
 const TabButton = ({ active, icon, label, onClick }: { active: boolean; icon: string; label: string; onClick: () => void }) => (
   <button
     onClick={onClick}
-    className={`flex-1 py-4 px-6 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
+    className={`flex-1 py-3 md:py-4 px-4 md:px-6 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-2 text-sm md:text-base ${
       active
-        ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-lg shadow-orange-500/25 scale-[1.02]'
-        : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800 hover:text-gray-300 border border-gray-700/50'
+        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/25 scale-[1.02] border-2 border-green-400'
+        : 'bg-white/40 text-green-800 hover:bg-white/60 hover:text-green-900 border-2 border-green-500/30'
     }`}
   >
-    <span className={`text-xl ${active ? 'animate-bounce' : ''}`}>{icon}</span>
-    <span>{label}</span>
+    <span className={`text-lg md:text-xl ${active ? 'animate-bounce' : ''}`}>{icon}</span>
+    <span className="hidden sm:inline">{label}</span>
   </button>
 );
 
@@ -112,22 +112,22 @@ export const App = () => {
 
   if (loading) {
     return (
-      <div className="flex flex-col justify-center items-center min-h-screen bg-[#0a0a1a]">
+      <div className="flex flex-col justify-center items-center min-h-screen bg-gradient-to-b from-sky-200 to-green-100">
         <div className="relative">
-          <div className="w-16 h-16 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
-          <span className="absolute inset-0 flex items-center justify-center text-2xl">🏰</span>
+          <div className="w-16 h-16 border-4 border-green-300 border-t-green-600 rounded-full animate-spin"></div>
+          <span className="absolute inset-0 flex items-center justify-center text-2xl">🌳</span>
         </div>
-        <p className="text-gray-400 mt-4 animate-pulse">Loading today's dungeon...</p>
+        <p className="text-green-700 mt-4 animate-pulse font-semibold">Loading today's dungeon...</p>
       </div>
     );
   }
 
   return (
-    <div className={`min-h-screen bg-[#0a0a1a] text-white transition-opacity duration-500 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
-      {/* Animated background */}
+    <div className={`min-h-screen bg-gradient-to-b from-sky-200 via-green-50 to-green-100 text-gray-900 transition-opacity duration-500 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Animated nature background */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-[100px]" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-orange-500/10 rounded-full blur-[100px]" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-green-300/20 rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-300/20 rounded-full blur-[120px]" />
       </div>
 
       <div className="relative z-10 p-4 md:p-6">
@@ -160,68 +160,68 @@ export const App = () => {
 
           {/* Error Banner */}
           {error && (
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6 flex items-center gap-3">
-              <span className="text-2xl">⚠️</span>
-              <p className="text-yellow-200 text-sm">{error}</p>
+            <div className="bg-yellow-100 border-2 border-yellow-400 rounded-xl p-3 md:p-4 mb-4 md:mb-6 flex items-center gap-3">
+              <span className="text-xl md:text-2xl">⚠️</span>
+              <p className="text-yellow-800 text-xs md:text-sm font-semibold">{error}</p>
             </div>
           )}
 
           {/* Streak Banner (if user has a streak) */}
           {streak.current > 0 && (
-            <div className="bg-gradient-to-r from-orange-500/20 via-yellow-500/20 to-orange-500/20 border border-orange-500/30 rounded-xl p-4 mb-6 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">🔥</span>
+            <div className="bg-gradient-to-r from-orange-200 via-yellow-200 to-orange-200 border-2 border-orange-400 rounded-xl p-3 md:p-4 mb-4 md:mb-6 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 md:gap-3">
+                <span className="text-2xl md:text-3xl">🔥</span>
                 <div>
-                  <p className="text-orange-300 font-bold text-lg">{streak.current} Day Streak!</p>
-                  <p className="text-orange-200/60 text-sm">Best: {streak.best} days • Keep playing daily!</p>
+                  <p className="text-orange-700 font-bold text-base md:text-lg">{streak.current} Day Streak!</p>
+                  <p className="text-orange-600 text-xs md:text-sm">Best: {streak.best} days • Keep playing!</p>
                 </div>
               </div>
-              <div className="hidden md:flex items-center gap-1">
+              <div className="hidden sm:flex items-center gap-1">
                 {[...Array(Math.min(streak.current, 7))].map((_, i) => (
-                  <span key={i} className="text-xl">🔥</span>
+                  <span key={i} className="text-lg md:text-xl">🔥</span>
                 ))}
-                {streak.current > 7 && <span className="text-orange-400 text-sm ml-1">+{streak.current - 7}</span>}
+                {streak.current > 7 && <span className="text-orange-600 text-xs md:text-sm ml-1">+{streak.current - 7}</span>}
               </div>
             </div>
           )}
 
           {/* Challenge + Countdown Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3 lg:gap-4 mb-4 md:mb-6">
             {/* Challenge Cards */}
             <ChallengeCard 
               icon={monster === 'Dragon' ? '🐉' : monster === 'Skeleton' ? '💀' : monster === 'Slime' ? '🟢' : '👹'}
               label="Monster"
               value={monster || 'Goblin'}
-              color="from-red-500/20 to-red-900/20"
+              color="from-red-200/60 to-red-300/40"
             />
             <ChallengeCard 
               icon="✨"
               label="Modifier"
               value={modifier || 'Normal'}
-              color="from-purple-500/20 to-purple-900/20"
+              color="from-purple-200/60 to-purple-300/40"
             />
             <ChallengeCard 
               icon="🔥"
-              label="Your Streak"
-              value={streak.current > 0 ? `${streak.current} days` : 'Start today!'}
-              color="from-orange-500/20 to-yellow-900/20"
+              label="Streak"
+              value={streak.current > 0 ? `${streak.current} days` : 'Start!'}
+              color="from-orange-200/60 to-yellow-300/40"
             />
             
             {/* Countdown */}
-            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl p-4 border border-gray-700/50">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 text-center">Next Dungeon In</p>
-              <div className="flex items-center justify-center gap-2">
+            <div className="bg-white/60 backdrop-blur rounded-xl p-3 md:p-4 border-2 border-blue-400/40 col-span-2 lg:col-span-1">
+              <p className="text-[10px] md:text-xs text-blue-700 uppercase tracking-wider mb-2 text-center font-semibold">Next Dungeon</p>
+              <div className="flex items-center justify-center gap-1 md:gap-2">
                 <TimeUnit value={countdown.hours} label="hrs" />
-                <span className="text-gray-600 text-xl font-bold mb-4">:</span>
+                <span className="text-green-600 text-lg md:text-xl font-bold mb-4">:</span>
                 <TimeUnit value={countdown.minutes} label="min" />
-                <span className="text-gray-600 text-xl font-bold mb-4">:</span>
+                <span className="text-green-600 text-lg md:text-xl font-bold mb-4">:</span>
                 <TimeUnit value={countdown.seconds} label="sec" />
               </div>
             </div>
           </div>
 
           {/* Tab Buttons */}
-          <div className="flex gap-3 mb-6">
+          <div className="flex gap-2 md:gap-3 mb-4 md:mb-6">
             <TabButton 
               active={activeTab === 'play'} 
               icon="🎮" 
@@ -237,9 +237,9 @@ export const App = () => {
           </div>
 
           {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
             {/* Main Area (2/3) */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-4 md:space-y-6">
               {activeTab === 'play' ? (
                 <>
                   <GameEmbed layout={layout} monster={monster} modifier={modifier} />
@@ -254,49 +254,38 @@ export const App = () => {
             </div>
             
             {/* Sidebar (1/3) */}
-            <div className="lg:col-span-1 space-y-6">
+            <div className="lg:col-span-1 space-y-4 md:space-y-6">
               <Leaderboard />
               <AdminPanel isModerator={isModerator} />
             </div>
           </div>
 
           {/* How It Works Section */}
-          <div className="mt-8 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-2xl p-6 border border-gray-700/50">
-            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-              <span>🔄</span> How It Works
+          <div className="mt-6 md:mt-8 bg-white rounded-xl p-4 md:p-6 border-2 border-green-600 shadow-lg">
+            <h3 className="font-bold text-lg md:text-xl mb-4 md:mb-6 flex items-center gap-2 text-green-800">
+              <span className="text-2xl">🔄</span> How It Works
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
               {[
-                { icon: '🎮', title: 'Play', desc: 'Try today\'s dungeon' },
-                { icon: '🎨', title: 'Create', desc: 'Design your room' },
-                { icon: '📝', title: 'Submit', desc: 'Post as comment' },
-                { icon: '⬆️', title: 'Vote', desc: 'Upvote favorites' },
-                { icon: '🌟', title: 'Featured', desc: 'Top = tomorrow\'s!' },
+                { icon: '🎮', title: 'Play', desc: 'Try today\'s dungeon', color: 'from-blue-500 to-blue-600' },
+                { icon: '🎨', title: 'Create', desc: 'Design your room', color: 'from-purple-500 to-purple-600' },
+                { icon: '📝', title: 'Submit', desc: 'Post as comment', color: 'from-green-500 to-green-600' },
+                { icon: '⬆️', title: 'Vote', desc: 'Upvote favorites', color: 'from-orange-500 to-orange-600' },
+                { icon: '🌟', title: 'Featured', desc: 'Top = tomorrow\'s!', color: 'from-yellow-500 to-amber-600' },
               ].map((step, i) => (
-                <div key={i} className="text-center">
-                  <div className="w-12 h-12 mx-auto bg-gray-800/50 rounded-full flex items-center justify-center text-2xl mb-2 border border-gray-700/50">
+                <div key={i} className="text-center relative">
+                  <div className={`w-14 h-14 md:w-16 md:h-16 mx-auto bg-gradient-to-br ${step.color} rounded-xl flex items-center justify-center text-2xl md:text-3xl mb-2 shadow-lg border-2 border-white transform hover:scale-110 transition-transform`}>
                     {step.icon}
                   </div>
-                  <p className="font-medium text-sm text-white">{step.title}</p>
-                  <p className="text-xs text-gray-500">{step.desc}</p>
+                  <p className="font-bold text-xs md:text-sm text-gray-900">{step.title}</p>
+                  <p className="text-[10px] md:text-xs text-gray-600 mt-0.5">{step.desc}</p>
                   {i < 4 && (
-                    <span className="hidden md:inline text-gray-700 text-xl absolute right-0 top-1/2">→</span>
+                    <span className="hidden md:inline text-green-500 text-2xl absolute -right-3 top-6">→</span>
                   )}
                 </div>
               ))}
             </div>
           </div>
-
-          {/* Footer */}
-          <footer className="mt-8 text-center">
-            <div className="flex items-center justify-center gap-4 text-xs text-gray-600">
-              <span>Built for Reddit's Daily Games Hackathon 2026</span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                Made with <span className="text-red-500">❤️</span> using GameMaker
-              </span>
-            </div>
-          </footer>
         </div>
       </div>
     </div>
