@@ -772,9 +772,9 @@ export class GameScene extends Phaser.Scene {
 
   private showControlsOverlay() {
     const classAbility: Record<PlayerClass, string> = {
-      warrior: 'E = Shield Slam (wide area knockback)',
-      rogue: 'SHIFT = Shadow Step (teleport behind enemy)',
-      'dark-knight': 'E = Dark Flame (fire area attack)',
+      warrior: 'E = Shield Slam | Passive: 3% heal per hit',
+      rogue: 'SHIFT = Shadow Step | Passive: 25% dodge',
+      'dark-knight': 'E = Dark Flame | Passive: 8 dmg/tick burn',
     };
 
     const overlay = this.add.rectangle(320, 280, 500, 280, 0x000000, 0.85).setDepth(3000).setScrollFactor(0);
