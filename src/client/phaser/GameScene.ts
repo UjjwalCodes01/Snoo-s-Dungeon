@@ -2206,6 +2206,31 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleProjectileHit(proj: any, enemy: any) {
+    // Check if there's a wall between player and enemy (prevent shooting through walls)
+    const line = new Phaser.Geom.Line(this.player.x, this.player.y, enemy.x, enemy.y);
+    let blockedByWall = false;
+    
+    this.walls.children.entries.forEach((wall) => {
+      if (!wall.active) return;
+      const wallSprite = wall as Phaser.Physics.Arcade.Sprite;
+      const wallBody = wallSprite.body as Phaser.Physics.Arcade.StaticBody;
+      const wallRect = new Phaser.Geom.Rectangle(
+        wallBody.x,
+        wallBody.y,
+        wallBody.width,
+        wallBody.height
+      );
+      if (Phaser.Geom.Intersects.LineToRectangle(line, wallRect)) {
+        blockedByWall = true;
+      }
+    });
+    
+    // If blocked by wall, destroy projectile without damaging enemy
+    if (blockedByWall) {
+      proj.destroy();
+      return;
+    }
+    
     const damage = proj.getData('damage');
     const element = proj.getData('element') as ElementType;
     let hp = enemy.getData('hp');
