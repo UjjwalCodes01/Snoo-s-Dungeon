@@ -88,7 +88,7 @@ export const Splash = () => {
     <div className="flex relative flex-col justify-center items-center min-h-screen gap-4 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
       {/* Epic dungeon atmosphere */}
       <div 
-        className="absolute inset-0 mt-2 opacity-30"
+        className="absolute inset-0 mt-3 opacity-30"
         style={{
           background: 'radial-gradient(ellipse at 50% 20%, rgba(255, 165, 0, 0.3) 0%, rgba(139, 69, 19, 0.1) 40%, transparent 70%)',
           animation: 'pulse-bg 6s ease-in-out infinite',

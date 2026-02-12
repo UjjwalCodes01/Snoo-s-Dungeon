@@ -17,6 +17,12 @@ export function createGame(containerId: string, props: PhaserGameProps): Phaser.
     height: 640,
     parent: containerId,
     backgroundColor: '#1f2937',
+    input: {
+      activePointers: 3,  // Enable multi-touch: joystick + 2 action buttons simultaneously
+      touch: {
+        capture: true,    // Prevent browser gestures from interfering
+      },
+    },
     physics: {
       default: 'arcade',
       arcade: {

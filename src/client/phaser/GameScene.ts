@@ -1572,7 +1572,7 @@ export class GameScene extends Phaser.Scene {
     boss.setDepth(12).setCollideWorldBounds(true);
 
     // Boss is 2x a regular tile (they're 32×32 native with full frame content) - reduced size for mobile
-    const bossSize = bossKind === 'dude' ? 120 : 100;
+    const bossSize = bossKind === 'dude' ? 90 : 75;
     boss.setDisplaySize(bossSize, bossSize);
 
     const targetScaleX = boss.scaleX;
