@@ -12,7 +12,7 @@
 - **Leaderboard System**: Track top player scores with Redis backend
 - **Ghost Markers**: Semi-transparent player death markers visible to others
 - **Modifiers**: 5 gameplay modifiers (Speed Boost, Double Damage, Tank Mode, Glass Cannon, Regeneration)
-- **Enemies**: 4 enemy types with varying stats and behaviors (Goblin, Skeleton, Slime, Dragon)
+- **Enemies**: 3 enemy types with varying stats and behaviors (Orc, Skeleton, Vampire)
 
 ### Prize Categories
 - Grand Prize: $15,000
@@ -213,12 +213,11 @@ Open `src/client/hooks/useDailyContent.ts` and update API base URL from `localho
 - **Invincibility**: 1000ms after taking damage (visual flicker)
 
 ### Enemies
-| Enemy | HP | Damage | Speed | Frequency |
-|-------|----|----|-------|-----------|
-| Goblin | 25 | 8 | 150 | 2x |
-| Skeleton | 40 | 12 | 120 | 1x |
-| Slime | 60 | 5 | 60 | 1x |
-| Dragon | 150 | 20 | 90 | Rare (1x) |
+| Enemy | HP | Damage | Speed | Attack Range |
+|-------|----|----|-------|--------------|
+| Orc | 45 | 10 | 100 | 200 |
+| Skeleton | 35 | 20 | 180 | 180 |
+| Vampire | 55 | 12 | 150 | 220 |
 
 ### Modifiers (Random, One Per Game)
 - **Speed Boost**: +100 speed (300 total)

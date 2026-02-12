@@ -338,17 +338,11 @@ export function GameEmbed({ layout, monster, modifier }: GameEmbedProps) {
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 Playing
               </span>
-              <button
-                onClick={() => setShowPreview(true)}
-                className="px-3 py-1 bg-white/20 text-white rounded-lg text-sm hover:bg-white/30 transition-colors"
-              >
-                Show Info
-              </button>
             </div>
           </div>
         </div>
-        <div className="bg-gray-900">
-          <div id="phaser-game-container" ref={gameContainerRef} className="w-full" style={{ minHeight: '640px' }}></div>
+        <div className="bg-gray-900 flex items-center justify-center">
+          <div id="phaser-game-container" ref={gameContainerRef} className="w-full aspect-square max-w-[640px] mx-auto"></div>
         </div>
       </div>
     );

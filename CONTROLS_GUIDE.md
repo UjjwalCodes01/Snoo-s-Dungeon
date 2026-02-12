@@ -1,6 +1,6 @@
 # 🎮 Game Controls & Scoring Guide
 
-## Basic Controls
+## Desktop Controls
 
 ### Movement
 - **WASD Keys** or **Arrow Keys** - Move your character in 8 directions
@@ -35,6 +35,103 @@
 ### 🔄 Restart (R Key)
 - Press when game over to restart the game
 - Resets all stats, waves, and power-ups
+
+---
+
+## 📱 Mobile Controls (Touch)
+
+### 🕹️ Virtual Joystick (Left Side)
+- **Location:** Left half of screen
+- **Radius:** 60px with 12px dead zone
+- **Movement:** Touch and drag to move character
+- **Relocating:** Joystick snaps to where you touch
+- **Speed Curve:** Quadratic (gentle at center, full speed at edge)
+- **Visual:** Indigo glow with stroke ring
+- **Release:** Smoothly resets to default position
+
+### 🎮 Action Buttons (Right Side - Diamond Layout)
+
+#### ⚔️ Attack Button (Top)
+- **30-34px radius** with shadow & glow
+- **Hold to Attack:** Continuously attacks while pressed
+- **No tapping needed** - just hold down!
+- **Visual Feedback:** Scales to 0.85× with white glow when pressed
+- **Cooldown Display:** Real-time pie-chart overlay
+
+#### 🏃 Dash Button (Left)
+- **One-tap trigger** - Quick dodge/dash
+- **Cooldown:** 2 seconds with visual arc
+- **Same invincibility** as desktop (300ms)
+
+#### 💥 Ability Button (Right)
+- **Class-specific icons:**
+  - 🛡️ Warrior - Shield/Tank ability
+  - ⚡ Rogue - Speed/Agility skill  
+  - 🔥 Dark Knight - Offensive power
+- **One-tap trigger** with 5s cooldown
+- **Visual arc** shows remaining cooldown
+
+#### 🏹 Arrow Button (Bottom)
+- **Ranged attack** or secondary ability
+- **One-tap trigger**
+- **Independent cooldown**
+
+### 🤖 Auto-Attack Toggle
+- **"AA" button** above Attack button
+- **Green = Active**, Gray = Off
+- **Auto-fires attacks** at cooldown rate
+- **Frees up thumb** for movement/positioning
+- **Tap to toggle** on/off anytime
+
+### ✨ Mobile Features
+
+#### Multi-Touch Support
+- **Independent tracking** by pointerId
+- **Simultaneous actions:** Move + Attack + Ability
+- **Zone-based:** Left = joystick, Right = buttons
+- **No conflicts** between controls
+
+#### Visual Feedback
+- **Press:** Button scales 0.85× + white glow
+- **Release:** Smooth scale to 1.0 + restore color
+- **Cooldown:** Dimmed (0.35 alpha) + pie-chart arc
+- **Labels:** Emoji icons + sub-text descriptions
+
+#### Camera & Zoom
+- **1.25× zoom** for better visibility
+- **Follows player** with boundary limits
+- **Optimized view** of enemies and arena
+
+#### Mobile HUD
+- **Larger text:** HP (14px), Score (20px), Wave (16px)
+- **Thicker strokes** for readability
+- **Simplified cooldowns** shown on buttons
+- **Larger combo text** (52px vs 44px)
+- **Bigger sound toggle** with larger touch area
+- **Controls hint:** "🕹️ Joystick = Move | Hold ⚔️ = Attack | AA = Auto-Attack"
+
+### 📐 Touch Zones
+```
+┌─────────────┬─────────────┐
+│             │      ⚔️      │
+│             │             │
+│     🕹️      │  🏃  💥  🏹  │
+│   Joystick  │             │
+│    Zone     │  Buttons    │
+└─────────────┴─────────────┘
+```
+
+### 💡 Mobile Tips
+
+1. **Use Auto-Attack (AA)** - Free up your thumb for better movement
+2. **Hold Attack** - No need to tap repeatedly, just hold
+3. **Joystick relocates** - Touch anywhere on left side to start moving
+4. **Watch cooldown arcs** - Visual indicators show when abilities are ready
+5. **Multi-touch works** - Attack while moving, dash while attacking
+6. **Zoom helps** - 1.25× zoom makes enemies easier to target
+7. **Diamond layout** - Natural thumb reach for all 4 action buttons
+
+---
 
 ## Power-Ups (Collect on Touch)
 

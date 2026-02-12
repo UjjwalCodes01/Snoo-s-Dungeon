@@ -139,6 +139,7 @@ export class GameScene extends Phaser.Scene {
   private playerDamage = 10;
   private playerSpeed = 200;
   private attackCooldown = 0;
+  private arrowCooldown = 0;  // Separate cooldown for arrows
   private dashCooldown = 0;
   private areaCooldown = 0;
   private invincible = 0;
@@ -163,7 +164,7 @@ export class GameScene extends Phaser.Scene {
   private score = 0;
   private startTime = 0;
   private gameOver = false;
-  private _won = false;
+  // private _won = false; // Reserved for future victory tracking
 
   // ── Wave system ──
   private currentWave = 1;
@@ -182,9 +183,9 @@ export class GameScene extends Phaser.Scene {
 
   // ── Boss system ──
   private activeBoss: Phaser.Physics.Arcade.Sprite | null = null;
-  private bossHPBarBg?: Phaser.GameObjects.Rectangle;
+  // private bossHPBarBg?: Phaser.GameObjects.Rectangle; // Reserved
   private bossHPBarFill?: Phaser.GameObjects.Rectangle;
-  private bossNameText?: Phaser.GameObjects.Text;
+  // private bossNameText?: Phaser.GameObjects.Text; // Reserved
   private bossPhaseText?: Phaser.GameObjects.Text;
   private bossBarContainer: Phaser.GameObjects.GameObject[] = [];
   private bossPhase = 1;
@@ -256,7 +257,7 @@ export class GameScene extends Phaser.Scene {
   private abilitiesText!: Phaser.GameObjects.Text;
   private classText!: Phaser.GameObjects.Text;
   private equipText!: Phaser.GameObjects.Text;
-  private _gameOverText?: Phaser.GameObjects.Text;
+  // private _gameOverText?: Phaser.GameObjects.Text; // Reserved for game over UI
 
   // ── Element FX tracking ──
   private burnEffects: Map<Phaser.Physics.Arcade.Sprite, { timer: number; tickTimer: number }> = new Map();
@@ -393,8 +394,8 @@ export class GameScene extends Phaser.Scene {
     
     this.load.image('wood-wall',    'sprites/Sprout Lands - Sprites - Basic pack/Tilesets/Wooden_House_Walls_Tilset.png');
 
-    // ── Boss Monsters (32×32 per frame) ──
-    const monsterAnims = ['Idle_4', 'Walk_6', 'Run_6', 'Attack1_4', 'Attack2_6', 'Walk+Attack_6', 'Throw_4', 'Hurt_4', 'Death_8', 'Jump_8', 'Push_6', 'Climb_4'];
+    // ── Boss Monsters (32×32 per frame) - OPTIMIZED: only essential animations ──
+    const monsterAnims = ['Idle_4', 'Walk_6', 'Attack1_4', 'Hurt_4', 'Death_8'];  // Reduced from 12
     const bossNames: { key: string; folder: string; prefix: string }[] = [
       { key: 'pink', folder: '1 Pink_Monster', prefix: 'Pink_Monster' },
       { key: 'owlet', folder: '2 Owlet_Monster', prefix: 'Owlet_Monster' },
@@ -405,23 +406,13 @@ export class GameScene extends Phaser.Scene {
         const animName = anim.split('_')[0]!.toLowerCase().replace('+', '_');
         this.load.spritesheet(`boss-${key}-${animName}`, `sprites/${folder}/${prefix}_${anim}.png`, { frameWidth: 32, frameHeight: 32 });
       });
-      this.load.image(`boss-${key}-dust`, `sprites/${folder}/Double_Jump_Dust_5.png`);
-      this.load.image(`boss-${key}-rock1`, `sprites/${folder}/Rock1.png`);
-      this.load.image(`boss-${key}-rock2`, `sprites/${folder}/Rock2.png`);
     });
 
-    // ── Magic Effects (64×64 individual frames) ──
+    // ── Magic Effects (64×64 individual frames) - OPTIMIZED: only load essential effects ──
     const effects: { name: string; folder: string; count: number }[] = [
-      { name: 'earth-spike', folder: 'Earth_Spike', count: 9 },
-      { name: 'explosion', folder: 'Explosion', count: 7 },
-      { name: 'fire-ball', folder: 'Fire_Ball', count: 10 },
-      { name: 'molten-spear', folder: 'Molten_Spear', count: 12 },
-      { name: 'portal-fx', folder: 'Portal', count: 10 },
-      { name: 'rocks-fx', folder: 'Rocks', count: 10 },
-      { name: 'tornado-fx', folder: 'Tornado', count: 9 },
-      { name: 'water-fx', folder: 'Water', count: 10 },
-      { name: 'water-geyser', folder: 'Water_Geyser', count: 13 },
-      { name: 'wind-fx', folder: 'Wind', count: 10 },
+      { name: 'explosion', folder: 'Explosion', count: 5 },      // Reduced from 7
+      { name: 'fire-ball', folder: 'Fire_Ball', count: 5 },      // Reduced from 10
+      { name: 'portal-fx', folder: 'Portal', count: 5 },         // Reduced from 10
     ];
     effects.forEach(({ name, folder, count }) => {
       for (let i = 1; i <= count; i++) {
@@ -430,8 +421,8 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // ── Magic Icons (32×32) ──
-    for (let i = 0; i <= 9; i++) {
+    // ── Magic Icons (32×32) - OPTIMIZED: only load essential icons ──
+    for (let i = 0; i <= 2; i++) {
       this.load.image(`magic-icon-${i}`, `sprites/Foozle_2DE0001_Pixel_Magic_Effects/Icons/tile00${i}.png`);
     }
 
@@ -678,9 +669,9 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 640, 640);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
-    // Mobile: zoom in for better visibility
+    // Mobile: slight zoom for better visibility (not too much to avoid control issues)
     if (this.isMobile) {
-      this.cameras.main.setZoom(1.25);
+      this.cameras.main.setZoom(1.0); // No zoom - let controls work naturally
     }
 
     // Vignette overlay for boss/low-HP effects
@@ -938,6 +929,7 @@ export class GameScene extends Phaser.Scene {
 
     // ── Cooldowns ──
     if (this.attackCooldown > 0) this.attackCooldown -= delta;
+    if (this.arrowCooldown > 0) this.arrowCooldown -= delta;
     if (this.dashCooldown > 0) this.dashCooldown -= delta;
     if (this.areaCooldown > 0) this.areaCooldown -= delta;
     if (this.comboTimer > 0) { this.comboTimer -= delta; if (this.comboTimer <= 0) this.comboCount = 0; }
@@ -945,27 +937,42 @@ export class GameScene extends Phaser.Scene {
     // ── Inputs ──
     const classStats = CLASS_STATS[this.playerClass];
 
-    // Mobile: continuous hold attack OR auto-attack
-    const mobileAttackTrigger = this.isTouchBtnPressed('attack') || this.isTouchBtnHeld('attack') || this.autoAttackEnabled;
-    if ((Phaser.Input.Keyboard.JustDown(this.spaceKey) || mobileAttackTrigger) && this.attackCooldown <= 0) {
+    // Mobile: Check buttons with priority (only ONE action per frame)
+    let actionTakenThisFrame = false;
+    
+    // Attack check (highest priority - can be held)
+    const attackPressed = this.isTouchBtnPressed('attack');
+    const attackHeld = this.isTouchBtnHeld('attack');
+    const mobileAttackTrigger = attackPressed || attackHeld || this.autoAttackEnabled;
+    if ((Phaser.Input.Keyboard.JustDown(this.spaceKey) || mobileAttackTrigger) && this.attackCooldown <= 0 && !actionTakenThisFrame) {
       this.attack();
       const atkMul = this.activePowerUps.has('attackSpeed') ? 0.5 : 1;
       this.attackCooldown = classStats.attackRate * atkMul;
+      if (attackPressed || attackHeld) actionTakenThisFrame = true;
     }
 
-    if ((Phaser.Input.Keyboard.JustDown(this.shiftKey) || this.isTouchBtnPressed('dash')) && this.dashCooldown <= 0) {
+    // Dash check
+    const dashPressed = this.isTouchBtnPressed('dash');
+    if ((Phaser.Input.Keyboard.JustDown(this.shiftKey) || dashPressed) && this.dashCooldown <= 0 && !actionTakenThisFrame) {
       this.dash();
       this.dashCooldown = classStats.dashCooldown;
+      if (dashPressed) actionTakenThisFrame = true;
     }
 
-    if ((Phaser.Input.Keyboard.JustDown(this.eKey) || this.isTouchBtnPressed('area')) && this.areaCooldown <= 0) {
+    // Area check
+    const areaPressed = this.isTouchBtnPressed('area');
+    if ((Phaser.Input.Keyboard.JustDown(this.eKey) || areaPressed) && this.areaCooldown <= 0 && !actionTakenThisFrame) {
       this.areaAttack();
       this.areaCooldown = classStats.areaCooldown;
+      if (areaPressed) actionTakenThisFrame = true;
     }
 
-    if ((Phaser.Input.Keyboard.JustDown(this.qKey) || this.isTouchBtnPressed('arrow')) && this.attackCooldown <= 0) {
+    // Arrow check (completely separate cooldown from attack)
+    const arrowPressed = this.isTouchBtnPressed('arrow');
+    if ((Phaser.Input.Keyboard.JustDown(this.qKey) || arrowPressed) && this.arrowCooldown <= 0 && !actionTakenThisFrame) {
       this.shootArrow();
-      this.attackCooldown = classStats.attackRate * 0.8;
+      this.arrowCooldown = classStats.attackRate * 0.8;
+      if (arrowPressed) actionTakenThisFrame = true;
     }
 
     // Mobile: update cooldown visuals
@@ -1111,11 +1118,11 @@ export class GameScene extends Phaser.Scene {
     //   Soldier: 17x21 content in 100x100 frame, centered at (41,39)
     //   Rogue:   35x29 content in 80x80 frame, at (19,35)
     //   DK:      full 48x32 frame (no alpha channel, palette mode)
-    // Display sizes scaled 50% smaller for more movement space
+    // Display sizes increased 20% for better visibility on mobile
     const sizes: Record<PlayerClass, { dw: number; dh: number; bw: number; bh: number; offX: number; offY: number }> = {
-      warrior:       { dw: 125, dh: 125, bw: 10, bh: 12, offX: 20, offY: 19 },  // 100x100 native, content 17x21 at (41,39)
-      rogue:         { dw: 75,  dh: 75,  bw: 18, bh: 15, offX: 9,  offY: 17 },  // 80x80 native, content 35x29 at (19,35)
-      'dark-knight': { dw: 42,  dh: 28,  bw: 15, bh: 12, offX: 4,  offY: 2  },  // 48x32 native, full frame
+      warrior:       { dw: 150, dh: 150, bw: 12, bh: 14, offX: 24, offY: 23 },  // 100x100 native, +20% size
+      rogue:         { dw: 90,  dh: 90,  bw: 22, bh: 18, offX: 11, offY: 20 },  // 80x80 native, +20% size
+      'dark-knight': { dw: 50,  dh: 34,  bw: 18, bh: 14, offX: 5,  offY: 2  },  // 48x32 native, +20% size
     };
     const sz = sizes[this.playerClass];
     this.player.setDisplaySize(sz.dw, sz.dh);
@@ -1465,13 +1472,14 @@ export class GameScene extends Phaser.Scene {
     enemy.setCollideWorldBounds(true);
 
     // Sizes from actual pixel content bounding boxes:
-    //   Orc:      23x18 content in 100x100 frame, at (43,42) → display reduced 50%
-    //   Skeleton: 15x15 content in 32x32 frame, at (7,14) → display reduced 50%
-    //   Vampire:  12x16 content in 32x32 frame, at (7,13) → display reduced 50%
+    //   Orc:      23x18 content in 100x100 frame, at (43,42)
+    //   Skeleton: 15x15 content in 32x32 frame, at (7,14)
+    //   Vampire:  12x16 content in 32x32 frame, at (7,13)
+    // Display sizes increased 20% for better visibility on mobile
     const displaySizes: Record<EnemyKind, { w: number; h: number }> = {
-      orc:      { w: 135, h: 135 },
-      skeleton: { w: 57,  h: 57 },
-      vampire:  { w: 55,  h: 55 },
+      orc:      { w: 162, h: 162 },  // +20% from 135
+      skeleton: { w: 68,  h: 68 },   // +20% from 57
+      vampire:  { w: 66,  h: 66 },   // +20% from 55
     };
     const ds = displaySizes[kind];
     enemy.setDisplaySize(ds.w * bossScale, ds.h * bossScale);
@@ -1563,8 +1571,8 @@ export class GameScene extends Phaser.Scene {
     const boss = this.enemies.create(tile.x, tile.y, textureKey) as Phaser.Physics.Arcade.Sprite;
     boss.setDepth(12).setCollideWorldBounds(true);
 
-    // Boss is 2.5x-3x a regular tile (they're 32×32 native with full frame content)
-    const bossSize = bossKind === 'dude' ? 160 : 130;
+    // Boss is 2x a regular tile (they're 32×32 native with full frame content) - reduced size for mobile
+    const bossSize = bossKind === 'dude' ? 120 : 100;
     boss.setDisplaySize(bossSize, bossSize);
 
     const targetScaleX = boss.scaleX;
@@ -1888,11 +1896,15 @@ export class GameScene extends Phaser.Scene {
   private dash() {
     const vx = this.player.body!.velocity.x;
     const vy = this.player.body!.velocity.y;
-    if (vx === 0 && vy === 0) return;
+    
+    // Allow dash while standing - use last aim angle if not moving
+    let angle = this.lastAimAngle;
+    if (vx !== 0 || vy !== 0) {
+      angle = Math.atan2(vy, vx);
+      this.lastAimAngle = angle;
+    }
+    
     this.playSfx('dash');
-
-    const angle = Math.atan2(vy, vx);
-    this.lastAimAngle = angle;
     const dashSpeed = this.playerClass === 'rogue' ? 800 : this.playerClass === 'warrior' ? 650 : 700;
     const dashDuration = this.playerClass === 'rogue' ? 180 : this.playerClass === 'warrior' ? 220 : 200;
 
@@ -3048,11 +3060,11 @@ export class GameScene extends Phaser.Scene {
       magnitude: 0
     };
 
-    // ── Action Buttons (right side — diamond layout) ──
-    const btnRadius = 30;
-    const btnSpacing = 72;
-    const centerX = camW - 90;
-    const centerY = camH - 120;
+    // ── Action Buttons (right side — 2x2 grid layout for clear separation) ──
+    const btnRadius = 28;
+    const btnGap = 75; // Space between button centers
+    const gridX = camW - 95; // Center of 2x2 grid
+    const gridY = camH - 110;
 
     const classAbilityLabel: Record<string, string> = {
       warrior: '🛡️', rogue: '⚡', 'dark-knight': '🔥'
@@ -3062,18 +3074,18 @@ export class GameScene extends Phaser.Scene {
     };
 
     const buttons = [
-      // Top: Attack (primary — largest)
+      // Top-Left: Attack (primary)
       { name: 'attack', color: 0xe74c3c, glow: 0xff6b6b, label: '⚔️', subLabel: 'ATK',
-        x: centerX, y: centerY - btnSpacing * 0.6, radius: btnRadius + 4, hold: true },
-      // Left: Dash
-      { name: 'dash', color: 0x3498db, glow: 0x60b0f4, label: '💨', subLabel: 'DASH',
-        x: centerX - btnSpacing * 0.7, y: centerY + btnSpacing * 0.15, radius: btnRadius, hold: false },
-      // Right: Area ability
-      { name: 'area', color: 0x9b59b6, glow: 0xc084fc, label: classAbilityLabel[this.playerClass] || '💥', subLabel: classAbilityName[this.playerClass] || 'AREA',
-        x: centerX + btnSpacing * 0.7, y: centerY + btnSpacing * 0.15, radius: btnRadius, hold: false },
-      // Bottom: Arrow
+        x: gridX - btnGap * 0.5, y: gridY - btnGap * 0.5, radius: btnRadius, hold: true },
+      // Top-Right: Arrow
       { name: 'arrow', color: 0xf59e0b, glow: 0xfbbf24, label: '🏹', subLabel: 'ARROW',
-        x: centerX, y: centerY + btnSpacing * 0.7, radius: btnRadius - 2, hold: false }
+        x: gridX + btnGap * 0.5, y: gridY - btnGap * 0.5, radius: btnRadius - 2, hold: false },
+      // Bottom-Left: Dash
+      { name: 'dash', color: 0x3498db, glow: 0x60b0f4, label: '💨', subLabel: 'DASH',
+        x: gridX - btnGap * 0.5, y: gridY + btnGap * 0.5, radius: btnRadius - 2, hold: false },
+      // Bottom-Right: Area ability
+      { name: 'area', color: 0x9b59b6, glow: 0xc084fc, label: classAbilityLabel[this.playerClass] || '💥', subLabel: classAbilityName[this.playerClass] || 'AREA',
+        x: gridX + btnGap * 0.5, y: gridY + btnGap * 0.5, radius: btnRadius - 2, hold: false }
     ];
 
     buttons.forEach(btn => {
@@ -3081,10 +3093,10 @@ export class GameScene extends Phaser.Scene {
       this.add.circle(btn.x + 2, btn.y + 2, btn.radius, 0x000000, 0.3)
         .setDepth(2999).setScrollFactor(0);
 
-      // Main button circle
+      // Main button circle (NO setInteractive - we use manual hit testing to prevent conflicts)
       const circle = this.add.circle(btn.x, btn.y, btn.radius, btn.color, 0.65)
         .setStrokeStyle(2.5, btn.glow, 0.5)
-        .setDepth(3000).setScrollFactor(0).setInteractive();
+        .setDepth(3000).setScrollFactor(0);
 
       // Emoji label
       const label = this.add.text(btn.x, btn.y - 3, btn.label, {
@@ -3117,7 +3129,8 @@ export class GameScene extends Phaser.Scene {
       fontSize: '11px', color: '#888', fontStyle: 'bold',
       stroke: '#000', strokeThickness: 2
     }).setOrigin(0.5);
-    this.autoAttackBtn = this.add.container(centerX, centerY - btnSpacing * 0.6 - 52, [aaBg, aaLabel])
+    // Position AA button above the attack button (top-left of grid)
+    this.autoAttackBtn = this.add.container(gridX - btnGap * 0.5, gridY - btnGap * 0.5 - 45, [aaBg, aaLabel])
       .setDepth(3004).setScrollFactor(0).setSize(36, 36).setInteractive();
     this.autoAttackBtn.on('pointerdown', () => {
       this.autoAttackEnabled = !this.autoAttackEnabled;
@@ -3128,6 +3141,11 @@ export class GameScene extends Phaser.Scene {
     // ── Touch Event Handlers (multi-touch aware) ──
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (!this.touchJoystick) return;
+
+      // CRITICAL: Clear ALL button pressed states first to prevent stale presses
+      this.touchButtons.forEach(btn => {
+        if (btn.pointerId < 0) btn.pressed = false;  // Only clear if not held
+      });
 
       // Check joystick area (generous hit zone — entire left half below HUD)
       if (pointer.x < camW * 0.4 && pointer.y > 350 && !this.touchJoystick.active) {
@@ -3147,24 +3165,42 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
-      // Check buttons (generous touch zones)
-      this.touchButtons.forEach((btn, _name) => {
+      // Check buttons - find the CLOSEST button within range (EXCLUSIVE - only one button per touch)
+      type ButtonData = { circle: Phaser.GameObjects.Arc; label: Phaser.GameObjects.Text; cooldownArc?: Phaser.GameObjects.Graphics; pressed: boolean; held: boolean; pointerId: number };
+      let closestBtn: { name: string; btn: ButtonData; dist: number } | null = null;
+      const touchBtnEntries = Array.from(this.touchButtons.entries());
+      for (const [name, btn] of touchBtnEntries) {
         const dist = Phaser.Math.Distance.Between(pointer.x, pointer.y, btn.circle.x, btn.circle.y);
-        const hitRadius = (btn.circle as any).radius * 1.4;
+        const hitRadius = (btn.circle as any).radius * 1.2; // Slightly generous hit zone
         if (dist <= hitRadius && btn.pointerId < 0) {
-          btn.pressed = true;
-          btn.held = true;
-          btn.pointerId = pointer.id;
-          // Visual press feedback
-          this.tweens.add({
-            targets: btn.circle,
-            scaleX: 0.85, scaleY: 0.85,
-            duration: 60, ease: 'Quad.easeOut'
-          });
-          btn.circle.setAlpha(1);
-          btn.circle.setStrokeStyle(3, 0xffffff, 0.8);
+          if (!closestBtn || dist < closestBtn.dist) {
+            closestBtn = { name, btn: btn as ButtonData, dist };
+          }
         }
-      });
+      }
+      
+      // EXCLUSIVE: Only activate ONE button - clear others first
+      if (closestBtn !== null) {
+        // Ensure no other button is marked pressed from this pointer
+        this.touchButtons.forEach((btn, name) => {
+          if (name !== closestBtn!.name && btn.pointerId < 0) {
+            btn.pressed = false;
+          }
+        });
+        
+        const theBtn = closestBtn.btn;
+        theBtn.pressed = true;
+        theBtn.held = true;
+        theBtn.pointerId = pointer.id;
+        // Visual press feedback
+        this.tweens.add({
+          targets: theBtn.circle,
+          scaleX: 0.85, scaleY: 0.85,
+          duration: 60, ease: 'Quad.easeOut'
+        });
+        theBtn.circle.setAlpha(1);
+        theBtn.circle.setStrokeStyle(3, 0xffffff, 0.8);
+      }
     });
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
@@ -3242,6 +3278,29 @@ export class GameScene extends Phaser.Scene {
         }
       });
     });
+
+    // Handle pointer cancel (e.g., touch interrupted by system gesture)
+    this.input.on('pointercancel', (pointer: Phaser.Input.Pointer) => {
+      // Same cleanup as pointerup to prevent stuck buttons
+      if (this.touchJoystick && this.touchJoystick.pointerId === pointer.id) {
+        this.touchJoystick.active = false;
+        this.touchJoystick.pointerId = -1;
+        this.touchJoystick.dx = 0;
+        this.touchJoystick.dy = 0;
+        this.touchJoystick.magnitude = 0;
+        joyThumb.setPosition(this.touchJoystick.baseX, this.touchJoystick.baseY);
+      }
+
+      this.touchButtons.forEach((btn) => {
+        if (btn.pointerId === pointer.id) {
+          btn.held = false;
+          btn.pressed = false;
+          btn.pointerId = -1;
+          btn.circle.setScale(1);
+          btn.circle.setAlpha(0.65);
+        }
+      });
+    });
   }
 
   private isTouchBtnPressed(name: string): boolean {
@@ -3267,7 +3326,7 @@ export class GameScene extends Phaser.Scene {
       'attack': { current: this.attackCooldown, max: classStats.attackRate },
       'dash': { current: this.dashCooldown, max: classStats.dashCooldown },
       'area': { current: this.areaCooldown, max: classStats.areaCooldown },
-      'arrow': { current: this.attackCooldown, max: classStats.attackRate * 0.8 }
+      'arrow': { current: this.arrowCooldown, max: classStats.attackRate * 0.8 }
     };
 
     this.touchButtons.forEach((btn, name) => {

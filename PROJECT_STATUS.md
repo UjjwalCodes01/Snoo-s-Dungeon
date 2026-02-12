@@ -45,14 +45,164 @@
 | Splash Screen | ✅ | `src/client/splash/splash.tsx` |
 | useDailyContent Hook | ✅ | `src/client/hooks/useDailyContent.ts` |
 
-### Documentation (100% Complete)
+### Game Engine (Phaser) - 100% Complete
+
+| Component | Status | File |
+|-----------|--------|------|
+| GameScene (Core Game Logic) | ✅ | `src/client/phaser/GameScene.ts` |
+| Sound System (Howler.js) | ✅ | 10 MP3 files (68KB total) |
+| Mobile Controls | ✅ | Virtual joystick + diamond buttons |
+| Desktop Controls | ✅ | WASD/Arrow keys + abilities |
+| Power-ups & Combat | ✅ | 8 power-ups, combo system |
+| Wave System | ✅ | Enemy spawning, boss waves |
+| Character Classes | ✅ | 3 character sprite sets |
+
+### Backend Validation & Content System - 100% Complete
+
+| Component | Status | File |
+|-----------|--------|------|
+| Map Validator | ✅ | `src/server/core/mapValidator.ts` |
+| Curated Maps Queue | ✅ | `src/server/data/curatedMaps.ts` |
+| Hybrid Voting System | ✅ | Community (≥5 votes) + fallback |
+| Submission Parsing | ✅ | Enhanced with upvote tracking |
+
+**Key Features:**
+- ✅ BFS flood-fill validation for connectivity
+- ✅ 20-70 floor tiles requirement
+- ✅ 3×3 boss arena detection
+- ✅ 30 hand-crafted curated maps with rotation
+- ✅ Auto-fallback when no valid community submission
+- ✅ Offensive pattern detection
+
+---
+
+## 🎮 Recent Major Improvements (Feb 2026)
+
+### 📱 Mobile Controls Overhaul (v0.0.6+)
+
+**Implemented by:** something1703 (Rudra)  
+**Status:** ✅ Complete  
+**Files Modified:** `src/client/phaser/GameScene.ts` (+259 lines)
+
+#### Virtual Joystick (Left Side)
+- ✅ 60px radius with 12px dead zone
+- ✅ Quadratic speed curve (smooth acceleration)
+- ✅ Relocating joystick (snaps to touch position)
+- ✅ Indigo glow styling with stroke ring
+- ✅ Smooth reset on release
+
+#### Action Buttons (Right Side - Diamond Layout)
+- ✅ **Attack (Top):** Hold to continuously attack
+- ✅ **Dash (Left):** One-tap dodge with 2s cooldown
+- ✅ **Ability (Right):** Class-specific (🛡️/⚡/🔥)
+- ✅ **Arrow (Bottom):** Secondary ability
+- ✅ 30-34px radius with shadow & glow effects
+- ✅ Press feedback: 0.85× scale + white glow
+- ✅ Cooldown arcs: Real-time pie-chart overlays
+- ✅ Dimmed buttons (0.35 alpha) when on cooldown
+
+#### Auto-Attack System
+- ✅ "AA" toggle button above Attack
+- ✅ Green = active, Gray = off
+- ✅ Auto-fires at cooldown rate
+- ✅ Frees thumb for positioning
+
+#### Multi-Touch Support
+- ✅ Independent pointer tracking
+- ✅ Simultaneous move + attack + ability
+- ✅ Left/right zone separation
+- ✅ No control conflicts
+
+#### Mobile Optimizations
+- ✅ 1.25× camera zoom for visibility
+- ✅ Larger HUD text (HP: 14px, Score: 20px, Wave: 16px)
+- ✅ Thicker text strokes for readability
+- ✅ Larger combo text (52px vs 44px)
+- ✅ Bigger sound toggle with larger touch area
+- ✅ Mobile-specific controls hint overlay
+- ✅ Touch instruction prompts
+
+### 🎵 Sound System Implementation
+
+**Added Files:** 10 MP3 sound effects (68KB total)
+```
+sounds/bgmusic.mp3  (33KB)  - Background music
+sounds/victory.mp3  (12KB)  - Win sound
+sounds/dash.mp3     (5KB)   - Dash ability
+sounds/boss.mp3     (4.2KB) - Boss entrance
+sounds/gameOver.mp3 (3.7KB) - Death sound
+sounds/wave.mp3     (2.6KB) - Wave start
+sounds/kill.mp3     (2.3KB) - Enemy killed
+sounds/attack.mp3   (2KB)   - Player attack
+sounds/pickup.mp3   (1.6KB) - Item pickup
+sounds/hit.mp3      (1.1KB) - Damage taken
+```
+
+**Features:**
+- ✅ Howler.js integration
+- ✅ Sound toggle button (🔊/🔇)
+- ✅ Background music play/pause
+- ✅ Event-based sound triggers
+- ✅ Proper sound management
+
+### 🎨 Character Sprite Sets
+
+**Added:** 3 complete character sets (42 sprite sheets)
+- **Pink Monster:** 14 animations (Attack, Death, Idle, Jump, Run, etc.)
+- **Owlet Monster:** 14 animations + dust effects
+- **Dude Monster:** 14 animations + props
+
+### 🗺️ Map Validation & Curated System
+
+**New Files:**
+- `src/server/core/mapValidator.ts` (180 lines)
+- `src/server/data/curatedMaps.ts` (313 lines)
+
+**Validation Rules:**
+- 100 characters ('0', '1', 'T')
+- 20-70 floor tiles
+- Single connected component (≥80% reachable)
+- At least one 3×3 boss arena
+- Offensive pattern detection
+
+**Curated Maps:**
+- 30 hand-crafted layouts
+- Categories: Classic, Themed, Mirrored, Hybrid
+- Rotation with teleport variants
+- Auto-generated rotations (90°) and mirrors (H/V)
+
+### 🏆 Hybrid Voting System
+
+**Modified:** `src/server/index.ts` (200+ lines)
+
+**Two-Tier Selection:**
+1. **Community Priority:**
+   - Requires ≥5 upvotes
+   - Must pass validation
+   - Top-voted wins
+
+2. **Curated Fallback:**
+   - When no qualified submissions
+   - Date-based rotation
+   - Guaranteed daily content
+
+**Tracking:**
+- Source type (community/curated)
+- Author, upvotes, comment ID
+- Redis-based metadata
+
+---
+
+## Documentation (100% Complete)
 
 | Document | Status | File |
 |----------|--------|------|
 | GameMaker Guide | ✅ | `GAMEMAKER_GUIDE.md` |
 | Backend Docs | ✅ | `BACKEND.md` |
+| Controls Guide | ✅ | `CONTROLS_GUIDE.md` (Desktop + Mobile) |
 | README | ✅ | `README.md` |
 | Checklist | ✅ | `CHECKLIST.md` |
+| Project Status | ✅ | `PROJECT_STATUS.md` (this file) |
 
 ---
 

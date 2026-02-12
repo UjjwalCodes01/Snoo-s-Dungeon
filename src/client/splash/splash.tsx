@@ -1,6 +1,5 @@
 import '../index.css';
 
-import { navigateTo } from '@devvit/web/client';
 import { context, requestExpandedMode } from '@devvit/web/client';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -53,12 +52,12 @@ const useCountdown = () => {
   return timeLeft;
 };
 
-// Stats display - Nature style
+// Stats display - Gaming style
 const StatBox = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
-  <div className="flex flex-col items-center bg-white/60 backdrop-blur-sm rounded-xl px-3 md:px-4 py-2 border-2 border-green-500/30 shadow-lg">
+  <div className="flex flex-col items-center bg-slate-800/70 backdrop-blur-sm rounded-xl px-3 md:px-4 py-2 border-2 border-amber-500/30 shadow-lg">
     <span className="text-lg md:text-xl">{icon}</span>
-    <span className="text-[10px] md:text-xs text-green-700 uppercase tracking-wide font-semibold">{label}</span>
-    <span className="text-xs md:text-sm font-bold text-green-900">{value}</span>
+    <span className="text-[10px] md:text-xs text-amber-400/80 uppercase tracking-wide font-semibold">{label}</span>
+    <span className="text-xs md:text-sm font-bold text-amber-300">{value}</span>
   </div>
 );
 
@@ -86,22 +85,22 @@ export const Splash = () => {
   ];
 
   return (
-    <div className="flex relative flex-col justify-center items-center min-h-screen gap-4 bg-gradient-to-b from-sky-300 via-green-100 to-green-200 overflow-hidden">
-      {/* Animated nature clouds */}
+    <div className="flex relative flex-col justify-center items-center min-h-screen gap-4 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
+      {/* Epic dungeon atmosphere */}
       <div 
-        className="absolute inset-0 opacity-30"
+        className="absolute inset-0 mt-2 opacity-30"
         style={{
-          background: 'radial-gradient(ellipse at 50% 20%, rgba(255, 255, 255, 0.6) 0%, rgba(135, 206, 235, 0.2) 40%, transparent 70%)',
+          background: 'radial-gradient(ellipse at 50% 20%, rgba(255, 165, 0, 0.3) 0%, rgba(139, 69, 19, 0.1) 40%, transparent 70%)',
           animation: 'pulse-bg 6s ease-in-out infinite',
         }}
       />
       
-      {/* Grass pattern overlay */}
+      {/* Grid pattern overlay */}
       <div 
-        className="absolute inset-0 opacity-10"
+        className="absolute inset-0 opacity-5"
         style={{
-          backgroundImage: `linear-gradient(rgba(34,197,94,0.2) 1px, transparent 1px),
-                           linear-gradient(90deg, rgba(34,197,94,0.2) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(255,165,0,0.3) 1px, transparent 1px),
+                           linear-gradient(90deg, rgba(255,165,0,0.3) 1px, transparent 1px)`,
           backgroundSize: '40px 40px',
         }}
       />
@@ -113,9 +112,10 @@ export const Splash = () => {
         ))}
       </div>
       
-      {/* Sunlight glowing orbs */}
-      <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-yellow-300/20 rounded-full blur-[100px] animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-green-400/20 rounded-full blur-[100px] animate-pulse delay-1000" />
+      {/* Epic glowing orbs */}
+      <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-orange-500/15 rounded-full blur-[100px] animate-pulse" />
+      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-purple-500/15 rounded-full blur-[100px] animate-pulse delay-1000" />
+      <div className="absolute top-1/2 right-1/3 w-48 h-48 bg-red-500/10 rounded-full blur-[80px] animate-pulse" />
 
       {/* Main content */}
       <div 
@@ -123,27 +123,39 @@ export const Splash = () => {
           isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
         }`}
       >
-        {/* Animated Nature Icon */}
+        {/* Game Logo */}
         <div className="relative mb-6">
           <div 
-            className="text-6xl md:text-8xl"
+            className="relative"
             style={{
-              filter: 'drop-shadow(0 0 20px rgba(34, 197, 94, 0.5)) drop-shadow(0 0 8px rgba(255, 255, 255, 0.8))',
+              filter: 'drop-shadow(0 0 25px rgba(255, 100, 50, 0.6)) drop-shadow(0 0 50px rgba(139, 69, 19, 0.4))',
               animation: 'float 3s ease-in-out infinite',
             }}
           >
-            🌳
+            <img 
+              src="logo.jpeg" 
+              alt="Snoo's Dungeon" 
+              className="w-24 h-24 md:w-32 md:h-32 rounded-2xl border-4 border-amber-400 shadow-2xl"
+              style={{ 
+                boxShadow: '0 0 30px rgba(255, 165, 0, 0.5), inset 0 0 20px rgba(255, 255, 255, 0.2)' 
+              }}
+            />
+            {/* Glowing ring effect */}
+            <div 
+              className="absolute inset-0 rounded-2xl" 
+              style={{ 
+                boxShadow: '0 0 0 4px rgba(255, 200, 100, 0.3), 0 0 20px rgba(255, 165, 0, 0.4)',
+                animation: 'pulse-glow 2s ease-in-out infinite'
+              }} 
+            />
           </div>
-          {/* Nature sparkles */}
-          <div className="absolute -top-2 -right-2 text-lg md:text-xl animate-ping">🌸</div>
-          <div className="absolute -bottom-1 -left-2 text-base md:text-lg animate-ping delay-500">🍃</div>
         </div>
         
-        {/* Title with nature glow */}
+        {/* Title with epic glow */}
         <h1 
-          className="text-2xl md:text-3xl font-bold text-center text-green-800 mb-1 px-4"
+          className="text-2xl md:text-3xl font-bold text-center text-amber-200 mb-1 px-4"
           style={{ 
-            textShadow: '0 2px 4px rgba(255,255,255,0.8), 0 0 20px rgba(34,197,94,0.3)',
+            textShadow: '0 2px 4px rgba(0,0,0,0.8), 0 0 20px rgba(255,165,0,0.3)',
             letterSpacing: '0.05em'
           }}
         >
@@ -152,11 +164,11 @@ export const Splash = () => {
         <h2 
           className="text-4xl md:text-5xl lg:text-6xl font-black text-center mb-2 px-4"
           style={{
-            background: 'linear-gradient(135deg, #22C55E 0%, #84CC16 50%, #10B981 100%)',
+            background: 'linear-gradient(135deg, #F59E0B 0%, #EF4444 50%, #F97316 100%)',
             backgroundClip: 'text',
             WebkitBackgroundClip: 'text',
             color: 'transparent',
-            textShadow: '0 0 30px rgba(34, 197, 94, 0.5)',
+            textShadow: '0 0 30px rgba(255, 165, 0, 0.5)',
             animation: 'gradient-shift 3s ease-in-out infinite',
             backgroundSize: '200% 200%',
             letterSpacing: '0.05em'
@@ -165,15 +177,15 @@ export const Splash = () => {
           DUNGEON
         </h2>
 
-        {/* Subtitle with nature feel */}
-        <p className="text-base md:text-lg text-center text-green-900 mb-1 px-4">
-          Welcome, <span className="font-bold text-transparent bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text">{context?.username ?? 'adventurer'}</span>!
+        {/* Subtitle */}
+        <p className="text-base md:text-lg text-center text-gray-300 mb-1 px-4">
+          Welcome, <span className="font-bold text-transparent bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text">{context?.username ?? 'adventurer'}</span>!
         </p>
         
         {/* Tagline */}
-        <p className="text-xs md:text-sm text-center text-green-800/70 max-w-md mb-6 px-6">
+        <p className="text-xs md:text-sm text-center text-gray-400 max-w-md mb-6 px-6">
           A daily dungeon crawler designed by the Reddit community. 
-          <span className="text-green-700 font-semibold"> Play, create, vote</span> — top designs become tomorrow's challenge!
+          <span className="text-amber-400 font-semibold"> Play, create, vote</span> — top designs become tomorrow's challenge!
         </p>
 
         {/* Live Stats Row */}
@@ -183,19 +195,19 @@ export const Splash = () => {
           <StatBox icon="🗺️" label="Designs" value="--" />
         </div>
 
-        {/* Nature CTA Button */}
+        {/* Epic CTA Button */}
         <button
           className="relative group flex items-center justify-center gap-2 md:gap-3 text-white text-lg md:text-xl font-bold py-4 md:py-5 px-8 md:px-12 rounded-2xl cursor-pointer transition-all duration-300 mb-6 border-2"
           style={{
             background: buttonHover 
-              ? 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)'
-              : 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
-            borderColor: buttonHover ? '#86EFAC' : '#22C55E',
+              ? 'linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)'
+              : 'linear-gradient(135deg, #D97706 0%, #DC2626 100%)',
+            borderColor: buttonHover ? '#FCD34D' : '#F59E0B',
             boxShadow: buttonHover
-              ? '0 0 30px rgba(34, 197, 94, 0.6), 0 10px 30px rgba(0,0,0,0.3), inset 0 -2px 15px rgba(0,0,0,0.2)'
-              : '0 0 15px rgba(34, 197, 94, 0.4), 0 5px 20px rgba(0,0,0,0.2), inset 0 -2px 10px rgba(0,0,0,0.1)',
+              ? '0 0 40px rgba(245, 158, 11, 0.6), 0 10px 30px rgba(0,0,0,0.5), inset 0 -2px 15px rgba(0,0,0,0.3)'
+              : '0 0 20px rgba(245, 158, 11, 0.4), 0 5px 20px rgba(0,0,0,0.3), inset 0 -2px 10px rgba(0,0,0,0.2)',
             transform: buttonHover ? 'scale(1.05) translateY(-2px)' : 'scale(1)',
-            textShadow: '0 2px 4px rgba(0,0,0,0.4)'
+            textShadow: '0 2px 4px rgba(0,0,0,0.6)'
           }}
           onMouseEnter={() => setButtonHover(true)}
           onMouseLeave={() => setButtonHover(false)}
@@ -209,7 +221,7 @@ export const Splash = () => {
           }}
         >
           {/* Button glow effect */}
-          <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-green-400 to-emerald-500 opacity-0 group-hover:opacity-25 blur-xl transition-opacity" />
+          <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-amber-400 to-red-500 opacity-0 group-hover:opacity-25 blur-xl transition-opacity" />
           
           <span 
             className="text-2xl"
@@ -220,29 +232,6 @@ export const Splash = () => {
           <span>Enter the Dungeon</span>
           <span className="text-2xl">🛡️</span>
         </button>
-
-        {/* Feature Pills - Nature Style */}
-        <div className="flex flex-wrap justify-center gap-2 md:gap-3 mb-4 px-4">
-          <span className="flex items-center gap-1 bg-white/40 backdrop-blur-sm text-green-800 px-3 md:px-4 py-2 rounded-full text-xs md:text-sm border-2 border-green-600/40 shadow-sm">
-            <span>🎮</span> <span className="hidden sm:inline">Play Daily</span><span className="sm:hidden">Play</span>
-          </span>
-          <span className="flex items-center gap-1 bg-white/40 backdrop-blur-sm text-blue-800 px-3 md:px-4 py-2 rounded-full text-xs md:text-sm border-2 border-blue-500/40 shadow-sm">
-            <span>🎨</span> <span className="hidden sm:inline">Create Rooms</span><span className="sm:hidden">Create</span>
-          </span>
-          <span className="flex items-center gap-1 bg-white/40 backdrop-blur-sm text-yellow-800 px-3 md:px-4 py-2 rounded-full text-xs md:text-sm border-2 border-yellow-600/40 shadow-sm">
-            <span>🏆</span> <span className="hidden sm:inline">Compete</span><span className="sm:hidden">Compete</span>
-          </span>
-          <span className="flex items-center gap-1 bg-white/40 backdrop-blur-sm text-purple-800 px-3 md:px-4 py-2 rounded-full text-xs md:text-sm border-2 border-purple-500/40 shadow-sm">
-            <span>👻</span> <span className="hidden sm:inline">See Deaths</span><span className="sm:hidden">Deaths</span>
-          </span>
-        </div>
-
-        {/* Reddit branding */}
-        <div className="flex items-center gap-2 text-green-800 text-xs">
-          <span>Built with</span>
-          <span className="text-red-500">❤️</span>
-          <span>for Reddit</span>
-        </div>
       </div>
 
       {/* CSS Animations */}
@@ -273,6 +262,11 @@ export const Splash = () => {
           0%, 100% { transform: rotate(0deg); }
           25% { transform: rotate(-20deg); }
           75% { transform: rotate(20deg); }
+        }
+        
+        @keyframes pulse-glow {
+          0%, 100% { box-shadow: 0 0 0 4px rgba(255, 200, 100, 0.3), 0 0 20px rgba(255, 165, 0, 0.4); }
+          50% { box-shadow: 0 0 0 8px rgba(255, 200, 100, 0.5), 0 0 40px rgba(255, 165, 0, 0.6); }
         }
       `}</style>
     </div>
