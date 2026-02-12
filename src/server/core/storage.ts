@@ -1,5 +1,6 @@
 import { redis } from '@devvit/web/server';
 import { DungeonLayout, PlayerScore, GhostPosition, LeaderboardEntry } from '../../shared/types/dungeon';
+import { getCuratedMapForDate } from '../data/curatedMaps';
 
 /**
  * Redis key utilities for dungeon data
@@ -40,28 +41,16 @@ export class DungeonStorage {
   }
 
   /**
-   * Default dungeon for testing/fallback
+   * Default dungeon: uses the curated queue based on today's date
    */
   private static getDefaultDungeon(): DungeonLayout {
-    // Simple cross pattern
-    const layout = 
-      '1111111111' +
-      '1000000001' +
-      '1000000001' +
-      '1000000001' +
-      '0000000000' +
-      '0000000000' +
-      '1000000001' +
-      '1000000001' +
-      '1000000001' +
-      '1111111111';
-
+    const curated = getCuratedMapForDate();
     return {
-      layout,
-      monster: 'Goblin',
-      modifier: 'Normal',
+      layout: curated.layout,
+      monster: curated.monster,
+      modifier: curated.modifier,
       createdAt: Date.now(),
-      submittedBy: 'system',
+      submittedBy: `system:${curated.name}`,
     };
   }
 

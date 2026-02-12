@@ -39,17 +39,17 @@ interface GameConfig {
 // ─── Class Stats ─────────────────────────────────────────────────────────────
 const CLASS_STATS: Record<PlayerClass, ClassStats> = {
   warrior: {
-    hp: 200, damage: 16, speed: 180, attackRate: 400,
+    hp: 220, damage: 22, speed: 175, attackRate: 300,
     dashCooldown: 2500, areaCooldown: 4000,
     ability: 'Shield Slam – Wide knockback + heal + invincibility', element: 'none',
   },
   rogue: {
-    hp: 85, damage: 14, speed: 290, attackRate: 230,
+    hp: 75, damage: 15, speed: 290, attackRate: 250,
     dashCooldown: 1200, areaCooldown: 3500,
     ability: 'Shadow Step – Teleport behind enemy + crit', element: 'none',
   },
   'dark-knight': {
-    hp: 140, damage: 20, speed: 210, attackRate: 320,
+    hp: 150, damage: 22, speed: 210, attackRate: 300,
     dashCooldown: 1800, areaCooldown: 3500,
     ability: 'Dark Flame – Fire ring + burn DoT + lifesteal', element: 'fire',
   },
@@ -58,8 +58,8 @@ const CLASS_STATS: Record<PlayerClass, ClassStats> = {
 // ─── Enemy Templates ─────────────────────────────────────────────────────────
 const ENEMY_TEMPLATES: Record<EnemyKind, { hp: number; damage: number; speed: number; attackRange: number }> = {
   orc:      { hp: 45, damage: 10, speed: 100, attackRange: 200 },   // tank: high HP, slow
-  skeleton: { hp: 25, damage: 16, speed: 160, attackRange: 180 },   // glass cannon: fast, fragile
-  vampire:  { hp: 50, damage: 9,  speed: 140, attackRange: 220 },   // sustain: lifesteal, moderate
+  skeleton: { hp: 35, damage: 20, speed: 180, attackRange: 180 },   // glass cannon: fast, hits hard, still fragile
+  vampire:  { hp: 55, damage: 12, speed: 150, attackRange: 220 },   // sustain: lifesteal, threatening
 };
 
 // ─── Boss Templates ──────────────────────────────────────────────────────────
@@ -77,11 +77,11 @@ interface BossTemplate {
 const BOSS_TEMPLATES: Record<BossKind, BossTemplate> = {
   pink: {
     name: 'Pink Monster', title: 'THE BERSERKER', emoji: '🩷',
-    hp: 500, damage: 20, speed: 180, color: 0xff69b4, barColor: 0xff1493,
+    hp: 600, damage: 25, speed: 180, color: 0xff69b4, barColor: 0xff1493,
   },
   owlet: {
     name: 'Owlet Monster', title: 'THE ARCHMAGE', emoji: '🦉',
-    hp: 400, damage: 15, speed: 140, color: 0x60a5fa, barColor: 0x3b82f6,
+    hp: 700, damage: 20, speed: 140, color: 0x60a5fa, barColor: 0x3b82f6,
   },
   dude: {
     name: 'Dude Monster', title: 'THE TITAN', emoji: '💪',
@@ -170,6 +170,8 @@ export class GameScene extends Phaser.Scene {
   private enemiesPerWave = 3;
   private waveInProgress = false;
   private floorTiles: { x: number; y: number }[] = [];
+  private reachableFloorTiles: { x: number; y: number }[] = [];
+  private bossArenaCenter: { x: number; y: number } | null = null;
   private isBossWave = false;
   private bossSpawned = false;
   private achievements: Set<string> = new Set();
@@ -226,6 +228,10 @@ export class GameScene extends Phaser.Scene {
   private sfx: Record<string, Howl> = {};
   private bgMusic?: Howl;
   private soundEnabled = true;
+  private soundToggleBtn?: Phaser.GameObjects.Text;
+
+  // ── Movement tracking ──
+  private lastAimAngle = 0; // Last direction the player moved in (radians)
   private badgeQueue: { title: string; desc: string }[] = [];
   private badgeShowing = false;
 
@@ -275,6 +281,8 @@ export class GameScene extends Phaser.Scene {
     this.enemiesPerWave = 3;
     this.waveInProgress = false;
     this.floorTiles = [];
+    this.reachableFloorTiles = [];
+    this.bossArenaCenter = null;
     this.comboCount = 0;
     this.comboTimer = 0;
     this.lastKillTime = 0;
@@ -744,6 +752,22 @@ export class GameScene extends Phaser.Scene {
     this.comboText = this.add.text(320, 60, '', {
       fontSize: '44px', color: '#ff4444', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
     }).setOrigin(0.5).setDepth(1003).setScrollFactor(0);
+
+    // Sound toggle button (top-right corner)
+    this.soundToggleBtn = this.add.text(620, 8, '🔊', {
+      fontSize: '20px', stroke: '#000', strokeThickness: 3
+    }).setOrigin(0.5).setDepth(1010).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    this.soundToggleBtn.on('pointerdown', () => {
+      this.soundEnabled = !this.soundEnabled;
+      this.soundToggleBtn?.setText(this.soundEnabled ? '🔊' : '🔇');
+      if (this.bgMusic) {
+        if (this.soundEnabled) {
+          this.bgMusic.play();
+        } else {
+          this.bgMusic.pause();
+        }
+      }
+    });
   }
 
   private showControlsOverlay() {
@@ -850,6 +874,11 @@ export class GameScene extends Phaser.Scene {
 
     if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
     this.player.setVelocity(vx, vy);
+
+    // Track last aim angle for arrow fallback
+    if (vx !== 0 || vy !== 0) {
+      this.lastAimAngle = Math.atan2(vy, vx);
+    }
 
     // Animation
     const isMoving = vx !== 0 || vy !== 0;
@@ -1027,8 +1056,11 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Spawn player
-    const start = this.floorTiles[0];
+    // Compute reachability — find the largest connected component of floor tiles
+    this.computeReachableTiles(tiles);
+
+    // Spawn player at the best reachable tile (center of largest component)
+    const start = this.reachableFloorTiles.length > 0 ? this.reachableFloorTiles[0]! : this.floorTiles[0];
     if (!start) { console.error('No floor tiles!'); return; }
 
     const textureKey = this.getPlayerTexture();
@@ -1054,6 +1086,115 @@ export class GameScene extends Phaser.Scene {
 
     this.player.play(this.playerAnim('idle'));
     this.spawnWave();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REACHABILITY SYSTEM — Flood-fill to find connected floor tiles
+  // ═══════════════════════════════════════════════════════════════════════════
+  private computeReachableTiles(tiles: string[]) {
+    const GRID = 10;
+    const TILE = 64;
+
+    const isFloor = (ch: string) => ch === '1' || ch === 'T' || ch === 't';
+
+    // Build a set of all floor grid positions
+    const allFloor = new Set<string>();
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        if (isFloor(tiles[r * GRID + c]!)) {
+          allFloor.add(`${r},${c}`);
+        }
+      }
+    }
+
+    if (allFloor.size === 0) return;
+
+    // Find all connected components via BFS
+    const globalVisited = new Set<string>();
+    const components: Set<string>[] = [];
+
+    for (const key of allFloor) {
+      if (globalVisited.has(key)) continue;
+      const component = new Set<string>();
+      const queue = [key];
+      component.add(key);
+      globalVisited.add(key);
+
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        const [cr, cc] = cur.split(',').map(Number) as [number, number];
+        for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as [number, number][]) {
+          const nr = cr + dr;
+          const nc = cc + dc;
+          const nk = `${nr},${nc}`;
+          if (nr < 0 || nr >= GRID || nc < 0 || nc >= GRID) continue;
+          if (globalVisited.has(nk)) continue;
+          if (!allFloor.has(nk)) continue;
+          globalVisited.add(nk);
+          component.add(nk);
+          queue.push(nk);
+        }
+      }
+      components.push(component);
+    }
+
+    // Use the largest connected component
+    components.sort((a, b) => b.size - a.size);
+    const largest = components[0]!;
+
+    // Convert to pixel coordinates
+    this.reachableFloorTiles = [];
+    largest.forEach((key) => {
+      const [r, c] = key.split(',').map(Number) as [number, number];
+      const px = c * TILE + TILE / 2;
+      const py = r * TILE + TILE / 2;
+      this.reachableFloorTiles.push({ x: px, y: py });
+    });
+
+    // Find boss arena: largest NxN open area within reachable tiles
+    this.bossArenaCenter = null;
+    for (const size of [5, 4, 3]) {
+      if (this.bossArenaCenter) break;
+      for (let r = 0; r <= GRID - size; r++) {
+        if (this.bossArenaCenter) break;
+        for (let c = 0; c <= GRID - size; c++) {
+          let allOpen = true;
+          for (let dr = 0; dr < size && allOpen; dr++) {
+            for (let dc = 0; dc < size && allOpen; dc++) {
+              if (!largest.has(`${r + dr},${c + dc}`)) allOpen = false;
+            }
+          }
+          if (allOpen) {
+            const centerR = r + Math.floor(size / 2);
+            const centerC = c + Math.floor(size / 2);
+            this.bossArenaCenter = {
+              x: centerC * TILE + TILE / 2,
+              y: centerR * TILE + TILE / 2,
+            };
+          }
+        }
+      }
+    }
+
+    // If no open area found, use center of reachable tiles
+    if (!this.bossArenaCenter && this.reachableFloorTiles.length > 0) {
+      this.bossArenaCenter = this.reachableFloorTiles[Math.floor(this.reachableFloorTiles.length / 2)]!;
+    }
+  }
+
+  /**
+   * Find the nearest reachable floor tile to a given world position.
+   * Used by chest/power-up drops and ability targeting.
+   */
+  private nearestReachableTile(worldX: number, worldY: number): { x: number; y: number } {
+    const tiles = this.reachableFloorTiles.length > 0 ? this.reachableFloorTiles : this.floorTiles;
+    let best = tiles[0]!;
+    let bestDist = Infinity;
+    for (const t of tiles) {
+      const d = Phaser.Math.Distance.Between(worldX, worldY, t.x, t.y);
+      if (d < bestDist) { bestDist = d; best = t; }
+    }
+    return best;
   }
 
   private getPlayerTexture(): string {
@@ -1192,7 +1333,7 @@ export class GameScene extends Phaser.Scene {
       if (data.tickTimer <= 0) {
         data.tickTimer = 500;
         let hp = enemy.getData('hp');
-        hp -= 3;
+        hp -= 8;  // DK fire burns hard
         enemy.setData('hp', hp);
         enemy.setTint(0xff4400);
 
@@ -1245,8 +1386,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     const count = this.enemiesPerWave;
-    for (let i = 0; i < count && this.floorTiles.length > 1; i++) {
-      const tile = this.floorTiles[Math.floor(Math.random() * (this.floorTiles.length - 1)) + 1];
+    const spawnTiles = this.reachableFloorTiles.length > 1 ? this.reachableFloorTiles : this.floorTiles;
+    for (let i = 0; i < count && spawnTiles.length > 1; i++) {
+      const tile = spawnTiles[Math.floor(Math.random() * (spawnTiles.length - 1)) + 1];
       if (!tile) continue;
 
       // Spawn all enemy types from the start for variety and testing
@@ -1307,9 +1449,9 @@ export class GameScene extends Phaser.Scene {
     enemy.setData('kind', kind);
 
     const template = ENEMY_TEMPLATES[kind];
-    const waveMul = 1 + (this.currentWave - 1) * 0.15;
+    const waveMul = 1 + (this.currentWave - 1) * 0.10;
     const hp = Math.floor(template.hp * waveMul * bossScale * (bossScale > 1 ? 5 : 1));
-    const damage = Math.floor(template.damage * Math.min(waveMul, 2.5) * bossScale);
+    const damage = Math.floor(template.damage * Math.min(waveMul, 2.0) * bossScale);
 
     enemy.setData('hp', hp);
     enemy.setData('maxHp', hp);
@@ -1344,7 +1486,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnBoss() {
-    const tile = this.floorTiles[Math.floor(this.floorTiles.length / 2)];
+    // Use boss arena center (largest open area) or center of reachable tiles
+    const tile = this.bossArenaCenter
+      || (this.reachableFloorTiles.length > 0
+          ? this.reachableFloorTiles[Math.floor(this.reachableFloorTiles.length / 2)]
+          : this.floorTiles[Math.floor(this.floorTiles.length / 2)]);
     if (!tile) return;
 
     // Determine which boss from schedule
@@ -1427,6 +1573,9 @@ export class GameScene extends Phaser.Scene {
     // 4) Heavy screen shake
     this.time.delayedCall(400, () => {
       this.cameras.main.shake(600, 0.025);
+    });
+    // 4b) Boss entrance sound — delayed to sync with portal emergence
+    this.time.delayedCall(900, () => {
       this.playSfx('boss');
     });
 
@@ -1489,8 +1638,8 @@ export class GameScene extends Phaser.Scene {
     this.isBossWave = this.currentWave % 3 === 0;   // Boss every 3rd wave
     this.bossSpawned = false;
 
-    this.maxHP += 15;
-    this.playerHP = Math.min(this.playerHP + 20, this.maxHP + this.equipBonusHP);
+    this.maxHP += 20;
+    this.playerHP = Math.min(this.playerHP + 30, this.maxHP + this.equipBonusHP);
 
     // Grant full HP on boss defeat
     if (prevWasBoss) {
@@ -1500,13 +1649,13 @@ export class GameScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
       this.tweens.add({ targets: fullHPText, y: 170, alpha: 0, duration: 2000, ease: 'Power2', onComplete: () => fullHPText.destroy() });
     } else {
-      const rw = this.add.text(320, 200, '+20 HP!', {
+      const rw = this.add.text(320, 200, '+30 HP!', {
         fontSize: '28px', color: '#22c55e', stroke: '#000', strokeThickness: 3
       }).setOrigin(0.5);
       this.tweens.add({ targets: rw, y: 170, alpha: 0, duration: 1500, ease: 'Power2', onComplete: () => rw.destroy() });
     }
 
-    this.enemiesPerWave = Math.min(3 + Math.floor(this.currentWave / 2), 10);
+    this.enemiesPerWave = Math.min(3 + Math.floor(this.currentWave / 2), 8);
 
     const isBoss = this.isBossWave;
     const txt = isBoss ? `⚔️ BOSS WAVE ${this.currentWave}!` : `Wave ${this.currentWave}`;
@@ -1589,6 +1738,12 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(delay, () => { if (hb.active) hb.destroy(); });
     }
 
+    // Warrior passive: on-hit heal — every attack restores 3% max HP
+    if (this.playerClass === 'warrior') {
+      const onHitHeal = Math.floor((this.maxHP + this.equipBonusHP) * 0.03);
+      this.playerHP = Math.min(this.playerHP + onHitHeal, this.maxHP + this.equipBonusHP);
+    }
+
     // Dark Knight fire trail on every attack
     if (this.playerClass === 'dark-knight') {
       const fxX = this.player.x + (facingRight ? 35 : -35);
@@ -1638,13 +1793,15 @@ export class GameScene extends Phaser.Scene {
     if (closest) {
       aimAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, (closest as Phaser.Physics.Arcade.Sprite).x, (closest as Phaser.Physics.Arcade.Sprite).y);
     } else {
-      // Fall back to facing direction
+      // Fall back to current velocity, then last movement direction
       const vx = this.player.body!.velocity.x;
       const vy = this.player.body!.velocity.y;
       if (vx !== 0 || vy !== 0) {
         aimAngle = Math.atan2(vy, vx);
+        this.lastAimAngle = aimAngle;
       } else {
-        aimAngle = this.player.flipX ? Math.PI : 0;
+        // Standing still — use last known movement direction
+        aimAngle = this.lastAimAngle;
       }
     }
 
@@ -1683,6 +1840,7 @@ export class GameScene extends Phaser.Scene {
     this.playSfx('dash');
 
     const angle = Math.atan2(vy, vx);
+    this.lastAimAngle = angle;
     const dashSpeed = this.playerClass === 'rogue' ? 800 : this.playerClass === 'warrior' ? 650 : 700;
     const dashDuration = this.playerClass === 'rogue' ? 180 : this.playerClass === 'warrior' ? 220 : 200;
 
@@ -1708,10 +1866,11 @@ export class GameScene extends Phaser.Scene {
         const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, cx, cy);
         const behindX = cx + Math.cos(awayAngle + Math.PI) * 60;
         const behindY = cy + Math.sin(awayAngle + Math.PI) * 60;
-        // Find the nearest floor tile to the desired position (avoids landing inside walls)
-        let bestTile = this.floorTiles[0]!;
+        // Find the nearest reachable floor tile to the desired position (avoids landing inside walls)
+        const shadowTiles = this.reachableFloorTiles.length > 0 ? this.reachableFloorTiles : this.floorTiles;
+        let bestTile = shadowTiles[0]!;
         let bestDist = Infinity;
-        this.floorTiles.forEach(ft => {
+        shadowTiles.forEach(ft => {
           const d = Phaser.Math.Distance.Between(behindX, behindY, ft.x, ft.y);
           if (d < bestDist) { bestDist = d; bestTile = ft; }
         });
@@ -2029,8 +2188,12 @@ export class GameScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(100);
       this.tweens.add({ targets: ht, y: ht.y - 25, alpha: 0, duration: 600, onComplete: () => ht.destroy() });
     } else if (this.playerClass === 'warrior') {
-      const heal = Math.floor((this.maxHP + this.equipBonusHP) * 0.05);
+      const heal = Math.floor((this.maxHP + this.equipBonusHP) * 0.08);
       this.playerHP = Math.min(this.playerHP + heal, this.maxHP + this.equipBonusHP);
+      const ht2 = this.add.text(this.player.x, this.player.y - 25, `+${heal}`, {
+        fontSize: '14px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(100);
+      this.tweens.add({ targets: ht2, y: ht2.y - 25, alpha: 0, duration: 600, onComplete: () => ht2.destroy() });
     }
 
     // Combo
@@ -2051,10 +2214,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Regular enemy drops
-    if (Math.random() < 0.15) this.dropHealth(enemy.x, enemy.y);
-    if (Math.random() < 0.10) this.spawnPowerUp(enemy.x, enemy.y);
-    if (Math.random() < 0.08) this.spawnChest(enemy.x, enemy.y);
+    // Regular enemy drops — ensure items spawn on reachable tiles
+    const dropTile = this.nearestReachableTile(enemy.x, enemy.y);
+    if (Math.random() < 0.15) this.dropHealth(dropTile.x, dropTile.y);
+    if (Math.random() < 0.10) this.spawnPowerUp(dropTile.x, dropTile.y);
+    if (Math.random() < 0.08) this.spawnChest(dropTile.x, dropTile.y);
 
     // Death animation — use explosion magic effect
     const hasExplosion = this.textures.exists('explosion-1');
@@ -2141,8 +2305,9 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(1005).setScrollFactor(0);
     this.tweens.add({ targets: hpText, y: 280, alpha: 0, duration: 2500, delay: 500, onComplete: () => hpText.destroy() });
 
-    // 8) Guaranteed epic chest drop
-    this.spawnChest(boss.x, boss.y);
+    // 8) Guaranteed epic chest drop — on nearest reachable tile
+    const bossDropTile = this.nearestReachableTile(boss.x, boss.y);
+    this.spawnChest(bossDropTile.x, bossDropTile.y);
 
     // 9) Remove boss and clean up
     boss.setVelocity(0, 0);
@@ -2469,10 +2634,11 @@ export class GameScene extends Phaser.Scene {
     const gx = Math.floor(px / 64);
     const gy = Math.floor(py / 64);
     if (gx < 0 || gx > 9 || gy < 0 || gy > 9 || this.tileGrid[gy * 10 + gx] === '0') {
-      // Player is inside a wall — snap to nearest floor tile
-      let bestTile = this.floorTiles[0]!;
+      // Player is inside a wall — snap to nearest reachable floor tile
+      const snapTiles = this.reachableFloorTiles.length > 0 ? this.reachableFloorTiles : this.floorTiles;
+      let bestTile = snapTiles[0]!;
       let bestDist = Infinity;
-      this.floorTiles.forEach(ft => {
+      snapTiles.forEach(ft => {
         const d = Phaser.Math.Distance.Between(px, py, ft.x, ft.y);
         if (d < bestDist) { bestDist = d; bestTile = ft; }
       });
@@ -2749,15 +2915,23 @@ export class GameScene extends Phaser.Scene {
       const res = await fetch('/api/ghosts');
       if (!res.ok) return;
       const data = await res.json();
-      data.ghosts?.forEach((g: any) => {
+      // Limit to 10 most recent ghosts to avoid clutter
+      const ghosts = (data.ghosts || []).slice(0, 10);
+      ghosts.forEach((g: any) => {
+        // Random offset to prevent overlapping labels when multiple deaths at same spot
+        const offsetX = Phaser.Math.Between(-8, 8);
+        const offsetY = Phaser.Math.Between(-8, 8);
+        const gx = g.x * 64 + 32 + offsetX;
+        const gy = g.y * 64 + 32 + offsetY;
+
         // Ghost marker — small translucent circle where players died
-        const gs = this.add.circle(g.x * 64 + 32, g.y * 64 + 32, 10, 0xc4b5fd, 0.35);
+        const gs = this.add.circle(gx, gy, 10, 0xc4b5fd, 0.35);
         gs.setDepth(3);
         this.ghosts.add(gs);
         this.tweens.add({ targets: gs, y: gs.y - 8, yoyo: true, duration: 2000, repeat: -1, ease: 'Sine.easeInOut' });
 
         // Ghost username label
-        const label = this.add.text(g.x * 64 + 32, g.y * 64 + 12, g.username || '💀', {
+        const label = this.add.text(gx, gy - 20, g.username || '💀', {
           fontSize: '8px', color: '#c4b5fd', stroke: '#000', strokeThickness: 2
         }).setOrigin(0.5).setDepth(3).setAlpha(0.5);
         this.ghosts.add(label);
@@ -2931,7 +3105,7 @@ export class GameScene extends Phaser.Scene {
       }),
       boss: new Howl({
         src: ['sounds/boss.ogg', 'sounds/boss.mp3'],
-        volume: 1.0,  // EPIC boss entrance
+        volume: 0.85,  // Epic boss entrance (balanced)
         html5: true
       }),
       gameOver: new Howl({
@@ -2941,7 +3115,7 @@ export class GameScene extends Phaser.Scene {
       }),
       victory: new Howl({
         src: ['sounds/victory.ogg', 'sounds/victory.mp3'],
-        volume: 1.0,  // EPIC WIN
+        volume: 0.9,  // Epic win (balanced)
         html5: true
       }),
       pickup: new Howl({
@@ -2960,7 +3134,7 @@ export class GameScene extends Phaser.Scene {
     // Initialize EPIC background music (looping)
     this.bgMusic = new Howl({
       src: ['sounds/bgmusic.ogg', 'sounds/bgmusic.mp3'],
-      volume: 0.15,  // Slightly quieter so sound effects can shine
+      volume: 0.25,  // Audible but not overpowering SFX
       loop: true,
       html5: true,
       autoplay: true
@@ -3241,7 +3415,8 @@ export class GameScene extends Phaser.Scene {
           }
         } else if (abil === 2) {
           // Tornado summon
-          const tile = this.floorTiles[Phaser.Math.Between(0, this.floorTiles.length - 1)];
+          const abilTiles = this.reachableFloorTiles.length > 0 ? this.reachableFloorTiles : this.floorTiles;
+          const tile = abilTiles[Phaser.Math.Between(0, abilTiles.length - 1)];
           if (tile) {
             this.playMagicEffect('tornado-fx', tile.x, tile.y, 70, true, 5000);
             // Damage in area over time
@@ -3257,8 +3432,9 @@ export class GameScene extends Phaser.Scene {
             });
           }
         } else if (abil === 3) {
-          // Teleport to random tile
-          const rTile = this.floorTiles[Phaser.Math.Between(0, this.floorTiles.length - 1)];
+          // Teleport to random reachable tile
+          const teleTiles = this.reachableFloorTiles.length > 0 ? this.reachableFloorTiles : this.floorTiles;
+          const rTile = teleTiles[Phaser.Math.Between(0, teleTiles.length - 1)];
           if (rTile) {
             this.playMagicEffect('portal-fx', boss.x, boss.y, 80);
             boss.setAlpha(0);
@@ -3636,19 +3812,30 @@ export class GameScene extends Phaser.Scene {
       btnText.setScale(1);
     });
 
-    btnBg.on('pointerdown', () => {
-      this.shareToReddit(score, wave, won);
-      
-      // Visual feedback
-      btnBg.setFillStyle(0x22c55e);
-      btnText.setText('✓ Shared!');
-      
-      // Disable button after click
+    btnBg.on('pointerdown', async () => {
+      // Disable immediately to prevent double-clicks
       btnBg.disableInteractive();
+      btnText.setText('⏳ Sharing...');
+      btnBg.setFillStyle(0x888888);
+
+      try {
+        await this.shareToReddit(score, wave, won);
+        btnBg.setFillStyle(0x22c55e);
+        btnText.setText('✓ Shared!');
+      } catch (_err) {
+        btnBg.setFillStyle(0xef4444);
+        btnText.setText('✗ Failed');
+        // Re-enable after 2s so user can retry
+        this.time.delayedCall(2000, () => {
+          btnBg.setFillStyle(0xff4500);
+          btnText.setText('📤 Share to Reddit');
+          btnBg.setInteractive({ useHandCursor: true });
+        });
+      }
     });
   }
 
-  private shareToReddit(score: number, wave: number, won: boolean) {
+  private async shareToReddit(score: number, wave: number, won: boolean): Promise<void> {
     const status = won ? '🏆 VICTORY' : `💀 Died on Wave ${wave}`;
     const emoji = won ? '🎉' : '⚔️';
     const classEmoji = this.playerClass === 'warrior' ? '🛡️' : 
@@ -3664,20 +3851,12 @@ export class GameScene extends Phaser.Scene {
       'Can you beat my score? 🎮'
     ].join('\n');
 
-    // Post to Reddit via Devvit API
-    this.postShareComment(shareText);
-  }
-
-  private async postShareComment(text: string) {
-    try {
-      await fetch('/api/share-score', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
-      });
-      this.playSfx('pickup');
-    } catch (err) {
-      console.error('Failed to share:', err);
-    }
+    const res = await fetch('/api/share-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: shareText }),
+    });
+    if (!res.ok) throw new Error(`Share failed: ${res.status}`);
+    this.playSfx('pickup');
   }
 }

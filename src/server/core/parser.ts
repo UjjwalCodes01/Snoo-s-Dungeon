@@ -1,5 +1,6 @@
 import { reddit } from '@devvit/web/server';
 import { CommentSubmission } from '../../shared/types/dungeon';
+import { validateLayout } from './mapValidator';
 
 /**
  * Parse comment text to extract dungeon layout, monster, and modifier
@@ -8,12 +9,13 @@ export class CommentParser {
   /**
    * Extract layout string from comment text
    * Looks for patterns like "Layout: 110011..." or "layout=110011..."
+   * Supports T/t for teleport tiles.
    */
   private static extractLayout(text: string): string | null {
     const patterns = [
-      /Layout:\s*([01]{100})/i,
-      /layout\s*=\s*([01]{100})/i,
-      /([01]{100})/,
+      /Layout:\s*([01Tt]{100})/i,
+      /layout\s*=\s*([01Tt]{100})/i,
+      /([01Tt]{100})/,
     ];
 
     for (const pattern of patterns) {
@@ -65,13 +67,20 @@ export class CommentParser {
   }
 
   /**
-   * Parse a single comment
+   * Parse a single comment — rejects layouts that fail validation
    */
   static parseComment(commentText: string, commentId: string, author: string, upvotes: number): CommentSubmission | null {
     const layout = this.extractLayout(commentText);
     
     if (!layout) {
       return null; // Not a valid dungeon submission
+    }
+
+    // Validate the layout for playability
+    const validation = validateLayout(layout);
+    if (!validation.valid) {
+      console.warn(`Rejected layout from ${author}: ${validation.reason}`);
+      return null;
     }
 
     return {

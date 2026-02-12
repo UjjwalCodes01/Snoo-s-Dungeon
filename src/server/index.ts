@@ -5,6 +5,8 @@ import { createPost } from './core/post';
 import { DungeonStorage } from './core/storage';
 import { CommentParser } from './core/parser';
 import { AdminHelper } from './core/admin';
+import { validateLayout } from './core/mapValidator';
+import { getCuratedMapForDate } from './data/curatedMaps';
 
 const app = express();
 
@@ -185,41 +187,75 @@ router.get('/api/ghosts', async (_req, res) => {
   }
 });
 
-// Scheduler endpoint: Generate tomorrow's dungeon from top-voted comment
+// Scheduler endpoint: Generate tomorrow's dungeon (Hybrid Voting System)
+// 1. Check for top-voted community submission (≥5 upvotes, passes validation)
+// 2. If none qualifies → fall back to curated map queue
 router.post('/internal/scheduler/generate-daily', async (_req, res) => {
   try {
-    // Configuration: Replace with actual submission post ID
-    // This should be set via environment variable or Redis config
     const submissionPostId = await redis.get('config:submission_post_id');
-    
-    if (!submissionPostId) {
-      console.warn('No submission post configured, using default dungeon');
-      res.json({ success: true, message: 'No submission post configured' });
-      return;
-    }
-    
-    // Get top-voted dungeon submission
-    const topSubmission = await CommentParser.getTopSubmission(submissionPostId);
-    
-    if (topSubmission) {
-      await DungeonStorage.saveDailyDungeon({
-        ...topSubmission,
-        createdAt: Date.now(),
-        submittedBy: topSubmission.author
-      });
-      console.log(`Generated new daily dungeon: ${topSubmission.monster} with ${topSubmission.modifier}`);
-      res.json({ 
-        success: true, 
-        dungeon: {
-          monster: topSubmission.monster,
-          modifier: topSubmission.modifier,
-          author: topSubmission.author
+
+    // ── Step 1: Try community submission ──
+    if (submissionPostId) {
+      try {
+        const submissions = await CommentParser.getSubmissionsFromPost(submissionPostId);
+        // Find highest-voted submission with ≥5 upvotes that passes validation
+        const UPVOTE_THRESHOLD = 5;
+        const qualified = submissions.filter(s => s.upvotes >= UPVOTE_THRESHOLD);
+
+        if (qualified.length > 0) {
+          const winner = qualified[0]!; // Already sorted by upvotes desc
+          const validation = validateLayout(winner.layout);
+          if (validation.valid) {
+            await DungeonStorage.saveDailyDungeon({
+              layout: winner.layout,
+              monster: winner.monster,
+              modifier: winner.modifier,
+              createdAt: Date.now(),
+              submittedBy: winner.author,
+            });
+            // Save today's winning submission info
+            await redis.set('dungeon:today_source', JSON.stringify({
+              source: 'community',
+              author: winner.author,
+              upvotes: winner.upvotes,
+              commentId: winner.commentId,
+            }));
+            console.log(`✅ Community dungeon by u/${winner.author} (${winner.upvotes} upvotes)`);
+            res.json({
+              success: true,
+              source: 'community',
+              dungeon: { monster: winner.monster, modifier: winner.modifier, author: winner.author, upvotes: winner.upvotes },
+            });
+            return;
+          } else {
+            console.warn(`Top submission by u/${winner.author} failed validation: ${validation.reason}`);
+          }
         }
-      });
-    } else {
-      console.warn('No valid submissions found, keeping current dungeon');
-      res.json({ success: true, message: 'No valid submissions found' });
+      } catch (err) {
+        console.warn('Failed to fetch community submissions, falling back to curated:', err);
+      }
     }
+
+    // ── Step 2: Fall back to curated map queue ──
+    const curatedMap = getCuratedMapForDate();
+    await DungeonStorage.saveDailyDungeon({
+      layout: curatedMap.layout,
+      monster: curatedMap.monster,
+      modifier: curatedMap.modifier,
+      createdAt: Date.now(),
+      submittedBy: `system:${curatedMap.name}`,
+    });
+    await redis.set('dungeon:today_source', JSON.stringify({
+      source: 'curated',
+      mapId: curatedMap.id,
+      mapName: curatedMap.name,
+    }));
+    console.log(`📦 Curated dungeon: ${curatedMap.name} (#${curatedMap.id})`);
+    res.json({
+      success: true,
+      source: 'curated',
+      dungeon: { name: curatedMap.name, monster: curatedMap.monster, modifier: curatedMap.modifier },
+    });
   } catch (error) {
     console.error('Failed to generate daily dungeon:', error);
     res.status(500).json({ success: false, error: 'Failed to generate dungeon' });
@@ -279,20 +315,24 @@ router.get('/admin/submission-post', async (_req, res) => {
 // Manually trigger dungeon generation (for testing)
 router.post('/admin/trigger-generation', async (_req, res) => {
   try {
-    // TODO: Fix moderator check - context.userType doesn't exist
-    // const isModerator = context.userType === 'moderator';
-    // if (!isModerator) {
-    //   res.status(403).json({ error: 'Moderator access required' });
-    //   return;
-    // }
-    
     const admin = new AdminHelper(redis);
     
     const postId = await admin.getSubmissionPostId();
     
     if (!postId) {
-      res.status(400).json({ 
-        error: 'No submission post configured. Use /admin/set-submission-post first.' 
+      // No submission post — use curated map directly
+      const curated = getCuratedMapForDate();
+      await DungeonStorage.saveDailyDungeon({
+        layout: curated.layout,
+        monster: curated.monster,
+        modifier: curated.modifier,
+        createdAt: Date.now(),
+        submittedBy: `system:${curated.name}`,
+      });
+      res.json({
+        success: true,
+        source: 'curated',
+        message: `Generated curated dungeon: ${curated.name}`,
       });
       return;
     }
@@ -300,29 +340,81 @@ router.post('/admin/trigger-generation', async (_req, res) => {
     const topSubmission = await CommentParser.getTopSubmission(postId);
     
     if (topSubmission) {
-      await DungeonStorage.saveDailyDungeon({
-        ...topSubmission,
-        createdAt: Date.now(),
-        submittedBy: topSubmission.author
-      });
-      res.json({ 
-        success: true, 
-        message: 'Dungeon generated successfully',
-        dungeon: {
-          monster: topSubmission.monster,
-          modifier: topSubmission.modifier,
-          author: topSubmission.author
-        }
-      });
+      const validation = validateLayout(topSubmission.layout);
+      if (validation.valid) {
+        await DungeonStorage.saveDailyDungeon({
+          ...topSubmission,
+          createdAt: Date.now(),
+          submittedBy: topSubmission.author,
+        });
+        res.json({ 
+          success: true,
+          source: 'community',
+          message: 'Dungeon generated from community submission',
+          dungeon: { monster: topSubmission.monster, modifier: topSubmission.modifier, author: topSubmission.author },
+        });
+      } else {
+        // Community submission failed validation → use curated
+        const curated = getCuratedMapForDate();
+        await DungeonStorage.saveDailyDungeon({
+          layout: curated.layout, monster: curated.monster, modifier: curated.modifier,
+          createdAt: Date.now(), submittedBy: `system:${curated.name}`,
+        });
+        res.json({
+          success: true,
+          source: 'curated',
+          message: `Top submission rejected (${validation.reason}). Used curated map: ${curated.name}`,
+        });
+      }
     } else {
+      const curated = getCuratedMapForDate();
+      await DungeonStorage.saveDailyDungeon({
+        layout: curated.layout, monster: curated.monster, modifier: curated.modifier,
+        createdAt: Date.now(), submittedBy: `system:${curated.name}`,
+      });
       res.json({ 
-        success: false, 
-        message: 'No valid submissions found' 
+        success: true,
+        source: 'curated',
+        message: `No valid submissions found. Used curated map: ${curated.name}`,
       });
     }
   } catch (error) {
     console.error('Failed to trigger generation:', error);
     res.status(500).json({ error: 'Failed to trigger generation' });
+  }
+});
+
+// Get today's dungeon source info (community or curated)
+router.get('/admin/dungeon-source', async (_req, res) => {
+  try {
+    const sourceData = await redis.get('dungeon:today_source');
+    if (sourceData) {
+      res.json(JSON.parse(sourceData));
+    } else {
+      res.json({ source: 'unknown', message: 'No source data recorded for today' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get dungeon source' });
+  }
+});
+
+// Validate a layout without submitting (for testing / preview)
+router.post('/admin/validate-layout', async (req, res) => {
+  try {
+    const { layout } = req.body;
+    if (!layout || typeof layout !== 'string') {
+      res.status(400).json({ valid: false, reason: 'Layout string required' });
+      return;
+    }
+    const result = validateLayout(layout);
+    res.json({
+      valid: result.valid,
+      reason: result.reason,
+      bossArena: result.bossArena,
+      reachableTileCount: result.reachableTiles?.size,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Validation error' });
   }
 });
 
