@@ -44,7 +44,7 @@ const CLASS_STATS: Record<PlayerClass, ClassStats> = {
     ability: 'Shield Slam – Wide knockback + heal + invincibility', element: 'none',
   },
   rogue: {
-    hp: 75, damage: 15, speed: 290, attackRate: 250,
+    hp: 110, damage: 16, speed: 290, attackRate: 250,
     dashCooldown: 1200, areaCooldown: 3500,
     ability: 'Shadow Step – Teleport behind enemy + crit', element: 'none',
   },
@@ -1270,6 +1270,18 @@ export class GameScene extends Phaser.Scene {
             this.tweens.add({ targets: atkFx, scale: 1.5, alpha: 0, duration: 300, onComplete: () => atkFx.destroy() });
 
             if (this.invincible <= 0 && !this.activePowerUps.has('shield')) {
+              // Rogue passive: 25% dodge chance
+              if (this.playerClass === 'rogue' && Math.random() < 0.25) {
+                const dodgeText = this.add.text(this.player.x, this.player.y - 40, 'DODGE!', {
+                  fontSize: '18px', color: '#a855f7', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+                }).setOrigin(0.5).setDepth(100);
+                this.tweens.add({ targets: dodgeText, y: dodgeText.y - 30, alpha: 0, duration: 800, onComplete: () => dodgeText.destroy() });
+                this.player.setAlpha(0.4);
+                this.time.delayedCall(200, () => { if (this.player.active) this.player.setAlpha(1); });
+                enemy.setData('attackCooldown', kind === 'skeleton' ? 800 : kind === 'vampire' ? 600 : 1000);
+                return;
+              }
+
               const dmg = enemy.getData('damage') || 5;
               this.playerHP -= dmg;
               if (this.playerHP < 0) this.playerHP = 0;
@@ -1844,7 +1856,7 @@ export class GameScene extends Phaser.Scene {
     const dashSpeed = this.playerClass === 'rogue' ? 800 : this.playerClass === 'warrior' ? 650 : 700;
     const dashDuration = this.playerClass === 'rogue' ? 180 : this.playerClass === 'warrior' ? 220 : 200;
 
-    this.invincible = this.playerClass === 'rogue' ? 500 : this.playerClass === 'warrior' ? 450 : 400;
+    this.invincible = this.playerClass === 'rogue' ? 600 : this.playerClass === 'warrior' ? 450 : 400;
 
     // Rogue shadow step — teleport behind nearest enemy (uses physics so walls block)
     if (this.playerClass === 'rogue') {
@@ -2194,6 +2206,14 @@ export class GameScene extends Phaser.Scene {
         fontSize: '14px', color: '#22c55e', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
       }).setOrigin(0.5).setDepth(100);
       this.tweens.add({ targets: ht2, y: ht2.y - 25, alpha: 0, duration: 600, onComplete: () => ht2.destroy() });
+    } else if (this.playerClass === 'rogue') {
+      // Rogue on-kill heal: 6% max HP — sustain through aggression
+      const heal = Math.floor((this.maxHP + this.equipBonusHP) * 0.06);
+      this.playerHP = Math.min(this.playerHP + heal, this.maxHP + this.equipBonusHP);
+      const ht3 = this.add.text(this.player.x, this.player.y - 25, `+${heal}`, {
+        fontSize: '14px', color: '#a855f7', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(100);
+      this.tweens.add({ targets: ht3, y: ht3.y - 25, alpha: 0, duration: 600, onComplete: () => ht3.destroy() });
     }
 
     // Combo
@@ -3331,15 +3351,25 @@ export class GameScene extends Phaser.Scene {
       if (this.anims.exists(atkAnim)) boss.play(atkAnim, true);
 
       if (this.invincible <= 0 && !this.activePowerUps.has('shield')) {
-        const dmg = boss.getData('damage') || 15;
-        this.playerHP -= dmg;
-        this.cameras.main.shake(150, 0.02);
-        this.invincible = 600;
-        this.player.play(this.playerAnim('hurt'), true);
-        const dt = this.add.text(this.player.x, this.player.y - 40, `-${dmg}`, {
-          fontSize: '26px', color: '#ff0000', fontStyle: 'bold', stroke: '#000', strokeThickness: 5
-        }).setOrigin(0.5).setDepth(100);
-        this.tweens.add({ targets: dt, y: dt.y - 35, alpha: 0, duration: 800, onComplete: () => dt.destroy() });
+        // Rogue passive: 25% dodge chance vs boss melee
+        if (this.playerClass === 'rogue' && Math.random() < 0.25) {
+          const dodgeText = this.add.text(this.player.x, this.player.y - 40, 'DODGE!', {
+            fontSize: '18px', color: '#a855f7', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+          }).setOrigin(0.5).setDepth(100);
+          this.tweens.add({ targets: dodgeText, y: dodgeText.y - 30, alpha: 0, duration: 800, onComplete: () => dodgeText.destroy() });
+          this.player.setAlpha(0.4);
+          this.time.delayedCall(200, () => { if (this.player.active) this.player.setAlpha(1); });
+        } else {
+          const dmg = boss.getData('damage') || 15;
+          this.playerHP -= dmg;
+          this.cameras.main.shake(150, 0.02);
+          this.invincible = 600;
+          this.player.play(this.playerAnim('hurt'), true);
+          const dt = this.add.text(this.player.x, this.player.y - 40, `-${dmg}`, {
+            fontSize: '26px', color: '#ff0000', fontStyle: 'bold', stroke: '#000', strokeThickness: 5
+          }).setOrigin(0.5).setDepth(100);
+          this.tweens.add({ targets: dt, y: dt.y - 35, alpha: 0, duration: 800, onComplete: () => dt.destroy() });
+        }
       }
       boss.setData('attackCooldown', 1200);
     }
