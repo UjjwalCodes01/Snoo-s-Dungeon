@@ -209,6 +209,7 @@ export class GameScene extends Phaser.Scene {
   private touchJoystick?: { 
     base: Phaser.GameObjects.Arc; 
     thumb: Phaser.GameObjects.Arc; 
+    ring: Phaser.GameObjects.Arc;
     pointerId: number; 
     baseX: number; 
     baseY: number;
@@ -216,13 +217,18 @@ export class GameScene extends Phaser.Scene {
     active: boolean;
     dx: number;
     dy: number;
+    magnitude: number;
   };
   private touchButtons: Map<string, { 
     circle: Phaser.GameObjects.Arc; 
     label: Phaser.GameObjects.Text; 
+    cooldownArc?: Phaser.GameObjects.Graphics;
     pressed: boolean;
+    held: boolean;
     pointerId: number;
   }> = new Map();
+  private autoAttackEnabled = false;
+  private autoAttackBtn?: Phaser.GameObjects.Container;
 
   // ── Sound ──
   private sfx: Record<string, Howl> = {};
@@ -672,6 +678,11 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 640, 640);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
+    // Mobile: zoom in for better visibility
+    if (this.isMobile) {
+      this.cameras.main.setZoom(1.25);
+    }
+
     // Vignette overlay for boss/low-HP effects
     this.vignetteOverlay = this.add.rectangle(320, 320, 640, 640, 0x000000, 0)
       .setDepth(998).setScrollFactor(0);
@@ -686,8 +697,9 @@ export class GameScene extends Phaser.Scene {
   // BUILD HUD
   // ═══════════════════════════════════════════════════════════════════════════
   private buildHUD() {
-    const hudY = 565;
-    const hudH = 75;
+    const mob = this.isMobile;
+    const hudY = mob ? 555 : 565;
+    const hudH = mob ? 85 : 75;
 
     // HUD background — use Artwork background if available
     if (this.textures.exists('ui-bg')) {
@@ -713,29 +725,32 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hpText = this.add.text(92, hudY + 18, '', {
-      fontSize: '12px', color: '#ffffff', fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+      fontSize: mob ? '14px' : '12px', color: '#ffffff', fontStyle: 'bold', stroke: '#000', strokeThickness: mob ? 4 : 3
     }).setOrigin(0.5).setDepth(1003).setScrollFactor(0);
 
     // Class label
     const classIcons: Record<PlayerClass, string> = { warrior: '⚔️', rogue: '🗡️', 'dark-knight': '🔥' };
     this.classText = this.add.text(12, hudY + 30, `${classIcons[this.playerClass]} ${this.playerClass.toUpperCase()}`, {
-      fontSize: '11px', color: '#ccc', fontStyle: 'bold', stroke: '#000', strokeThickness: 2
+      fontSize: mob ? '12px' : '11px', color: '#ccc', fontStyle: 'bold', stroke: '#000', strokeThickness: mob ? 3 : 2
     }).setOrigin(0, 0).setDepth(1003).setScrollFactor(0);
 
-    // Controls bar
+    // Controls bar — different text for mobile vs desktop
     const controlsY = hudY + 48;
-    this.add.text(12, controlsY, 'WASD Move  |  SPACE Attack  |  SHIFT Dash  |  E Area  |  Q Arrow  |  R Restart', {
-      fontSize: '9px', color: '#777', stroke: '#000', strokeThickness: 1
+    const controlsStr = mob
+      ? '🕹️ Joystick = Move  |  Hold ⚔️ = Attack  |  AA = Auto-Attack'
+      : 'WASD Move  |  SPACE Attack  |  SHIFT Dash  |  E Area  |  Q Arrow  |  R Restart';
+    this.add.text(12, controlsY, controlsStr, {
+      fontSize: mob ? '8px' : '9px', color: '#777', stroke: '#000', strokeThickness: 1
     }).setOrigin(0, 0).setDepth(1003).setScrollFactor(0);
 
     // Score
     this.scoreText = this.add.text(628, hudY + 8, '', {
-      fontSize: '18px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 3, align: 'right'
+      fontSize: mob ? '20px' : '18px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: mob ? 4 : 3, align: 'right'
     }).setOrigin(1, 0).setDepth(1003).setScrollFactor(0);
 
     // Wave
     this.waveText = this.add.text(628, hudY + 28, '', {
-      fontSize: '14px', color: '#60a5fa', fontStyle: 'bold', stroke: '#000', strokeThickness: 3, align: 'right'
+      fontSize: mob ? '16px' : '14px', color: '#60a5fa', fontStyle: 'bold', stroke: '#000', strokeThickness: mob ? 4 : 3, align: 'right'
     }).setOrigin(1, 0).setDepth(1003).setScrollFactor(0);
 
     // Equipment display
@@ -750,13 +765,17 @@ export class GameScene extends Phaser.Scene {
 
     // Combo text (floating, centered on screen)
     this.comboText = this.add.text(320, 60, '', {
-      fontSize: '44px', color: '#ff4444', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
+      fontSize: mob ? '52px' : '44px', color: '#ff4444', fontStyle: 'bold', stroke: '#000', strokeThickness: mob ? 8 : 6
     }).setOrigin(0.5).setDepth(1003).setScrollFactor(0);
 
-    // Sound toggle button (top-right corner)
-    this.soundToggleBtn = this.add.text(620, 8, '🔊', {
-      fontSize: '20px', stroke: '#000', strokeThickness: 3
+    // Sound toggle button (top-right corner) — larger on mobile
+    const soundX = mob ? 610 : 620;
+    const soundSize = mob ? '28px' : '20px';
+    this.soundToggleBtn = this.add.text(soundX, 8, '🔊', {
+      fontSize: soundSize, stroke: '#000', strokeThickness: 3
     }).setOrigin(0.5).setDepth(1010).setScrollFactor(0).setInteractive({ useHandCursor: true });
+    // Larger touch area on mobile
+    if (mob) this.soundToggleBtn.setInteractive(new Phaser.Geom.Rectangle(-15, -15, 60, 60), Phaser.Geom.Rectangle.Contains);
     this.soundToggleBtn.on('pointerdown', () => {
       this.soundEnabled = !this.soundEnabled;
       this.soundToggleBtn?.setText(this.soundEnabled ? '🔊' : '🔇');
@@ -771,10 +790,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showControlsOverlay() {
-    const classAbility: Record<PlayerClass, string> = {
+    const classAbilityDesktop: Record<PlayerClass, string> = {
       warrior: 'E = Shield Slam | Passive: 3% heal per hit',
       rogue: 'SHIFT = Shadow Step | Passive: 25% dodge',
       'dark-knight': 'E = Dark Flame | Passive: 8 dmg/tick burn',
+    };
+    const classAbilityMobile: Record<PlayerClass, string> = {
+      warrior: '🛡️ = Shield Slam | Passive: 3% heal per hit',
+      rogue: '💨 = Shadow Step | Passive: 25% dodge',
+      'dark-knight': '🔥 = Dark Flame | Passive: 8 dmg/tick burn',
     };
 
     const overlay = this.add.rectangle(320, 280, 500, 280, 0x000000, 0.85).setDepth(3000).setScrollFactor(0);
@@ -782,18 +806,28 @@ export class GameScene extends Phaser.Scene {
       fontSize: '28px', color: '#fbbf24', fontStyle: 'bold', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
 
-    const lines = [
+    const desktopLines = [
       'WASD / Arrows  —  Move',
       'SPACE  —  Attack (melee)',
       'Q  —  Shoot Arrow (ranged)',
       'SHIFT  —  Dash / Dodge',
       'E  —  Area Attack',
-      `Class: ${classAbility[this.playerClass]}`,
+      `Class: ${classAbilityDesktop[this.playerClass]}`,
       'R  —  Restart',
     ];
+    const mobileLines = [
+      '🕹️  Left Joystick  —  Move',
+      '⚔️  Hold Attack  —  Melee (or tap AA for auto)',
+      '🏹  Tap Arrow  —  Shoot ranged attack',
+      '💨  Tap Dash  —  Quick dodge',
+      `${this.playerClass === 'rogue' ? '⚡' : this.playerClass === 'warrior' ? '🛡️' : '🔥'}  Tap Ability  —  Special ability`,
+      `Class: ${classAbilityMobile[this.playerClass]}`,
+      '📌  Tap top half to restart when dead',
+    ];
+    const lines = this.isMobile ? mobileLines : desktopLines;
     const textObjs = lines.map((line, i) => {
       return this.add.text(320, 210 + i * 24, line, {
-        fontSize: '14px', color: i === 5 ? '#a78bfa' : '#ddd', stroke: '#000', strokeThickness: 2
+        fontSize: this.isMobile ? '13px' : '14px', color: i === 5 ? '#a78bfa' : '#ddd', stroke: '#000', strokeThickness: 2
       }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
     });
 
@@ -861,14 +895,15 @@ export class GameScene extends Phaser.Scene {
     if (this.cursors.up.isDown    || this.wasd.W.isDown) vy = -effectiveSpeed;
     if (this.cursors.down.isDown  || this.wasd.S.isDown) vy = effectiveSpeed;
 
-    // Touch joystick input
-    if (this.touchJoystick && this.touchJoystick.pointerId >= 0) {
-      const dx = this.touchJoystick.thumb.x - this.touchJoystick.baseX;
-      const dy = this.touchJoystick.thumb.y - this.touchJoystick.baseY;
+    // Touch joystick input (with dead zone + speed curve)
+    if (this.touchJoystick && this.touchJoystick.active) {
+      const dx = this.touchJoystick.dx;
+      const dy = this.touchJoystick.dy;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 8) {
-        vx = (dx / dist) * effectiveSpeed;
-        vy = (dy / dist) * effectiveSpeed;
+      if (dist > 0) {
+        const speedMul = this.touchJoystick.magnitude; // 0-1 with quadratic curve
+        vx = (dx / dist) * effectiveSpeed * speedMul;
+        vy = (dy / dist) * effectiveSpeed * speedMul;
       }
     }
 
@@ -910,7 +945,9 @@ export class GameScene extends Phaser.Scene {
     // ── Inputs ──
     const classStats = CLASS_STATS[this.playerClass];
 
-    if ((Phaser.Input.Keyboard.JustDown(this.spaceKey) || this.isTouchBtnPressed('attack')) && this.attackCooldown <= 0) {
+    // Mobile: continuous hold attack OR auto-attack
+    const mobileAttackTrigger = this.isTouchBtnPressed('attack') || this.isTouchBtnHeld('attack') || this.autoAttackEnabled;
+    if ((Phaser.Input.Keyboard.JustDown(this.spaceKey) || mobileAttackTrigger) && this.attackCooldown <= 0) {
       this.attack();
       const atkMul = this.activePowerUps.has('attackSpeed') ? 0.5 : 1;
       this.attackCooldown = classStats.attackRate * atkMul;
@@ -930,6 +967,9 @@ export class GameScene extends Phaser.Scene {
       this.shootArrow();
       this.attackCooldown = classStats.attackRate * 0.8;
     }
+
+    // Mobile: update cooldown visuals
+    this.updateMobileCooldowns();
 
     // ── Invincibility frames ──
     if (this.invincible > 0) {
@@ -2562,14 +2602,20 @@ export class GameScene extends Phaser.Scene {
       this.comboText.setAlpha(0);
     }
 
-    // Ability cooldown indicators
+    // Ability cooldown indicators — simplified on mobile (button arcs show cooldowns)
     const dashReady = this.dashCooldown <= 0;
     const areaReady = this.areaCooldown <= 0;
-    const dashStr = dashReady ? '🟢 Dash[SHIFT]' : `🔴 Dash ${(this.dashCooldown / 1000).toFixed(1)}s`;
-    const abilityName = this.playerClass === 'warrior' ? 'Shield[E]' : this.playerClass === 'rogue' ? 'Flurry[E]' : 'Flame[E]';
-    const areaStr = areaReady ? `🟢 ${abilityName}` : `🔴 ${abilityName} ${(this.areaCooldown / 1000).toFixed(1)}s`;
     const classLabel = this.playerClass === 'warrior' ? '⚔️ Warrior' : this.playerClass === 'rogue' ? '🗡️ Rogue' : '🔥 Dark Knight';
-    this.classText.setText(`${classLabel}  |  ${dashStr}  |  ${areaStr}`);
+    if (this.isMobile) {
+      // On mobile, just show class name + auto-attack status (cooldown shown on buttons)
+      const aaStr = this.autoAttackEnabled ? '🟢 AA' : '🔴 AA';
+      this.classText.setText(`${classLabel}  |  ${aaStr}`);
+    } else {
+      const dashStr = dashReady ? '🟢 Dash[SHIFT]' : `🔴 Dash ${(this.dashCooldown / 1000).toFixed(1)}s`;
+      const abilityName = this.playerClass === 'warrior' ? 'Shield[E]' : this.playerClass === 'rogue' ? 'Flurry[E]' : 'Flame[E]';
+      const areaStr = areaReady ? `🟢 ${abilityName}` : `🔴 ${abilityName} ${(this.areaCooldown / 1000).toFixed(1)}s`;
+      this.classText.setText(`${classLabel}  |  ${dashStr}  |  ${areaStr}`);
+    }
 
     // Power-up icons — only rebuild when set changes, just update countdown text otherwise
     const currentKeys = Array.from(this.activePowerUps.keys()).sort().join(',');
@@ -2968,74 +3014,155 @@ export class GameScene extends Phaser.Scene {
     const camW = this.cameras.main.width;
     const camH = this.cameras.main.height;
 
-    // Virtual joystick (left side)
-    const joyX = 90;
-    const joyY = camH - 100;
-    const joyRadius = 50;
-    const thumbRadius = 25;
+    // ── Virtual Joystick (left side) ──
+    const joyX = 100;
+    const joyY = camH - 120;
+    const joyRadius = 60;
+    const thumbRadius = 28;
+    const deadZone = 12; // pixels
 
-    const joyBase = this.add.circle(joyX, joyY, joyRadius, 0x333333, 0.5)
+    // Outer ring (direction indicator)
+    const joyRing = this.add.circle(joyX, joyY, joyRadius + 4, 0x000000, 0)
+      .setStrokeStyle(2, 0x888888, 0.3)
       .setDepth(3000).setScrollFactor(0);
-    const joyThumb = this.add.circle(joyX, joyY, thumbRadius, 0xffffff, 0.7)
+
+    const joyBase = this.add.circle(joyX, joyY, joyRadius, 0x1a1a2e, 0.55)
+      .setStrokeStyle(2, 0x4a4a6a, 0.6)
+      .setDepth(3000).setScrollFactor(0);
+
+    const joyThumb = this.add.circle(joyX, joyY, thumbRadius, 0x6366f1, 0.8)
+      .setStrokeStyle(2, 0xa5b4fc, 0.6)
       .setDepth(3001).setScrollFactor(0);
 
     this.touchJoystick = {
       base: joyBase,
       thumb: joyThumb,
+      ring: joyRing,
       baseX: joyX,
       baseY: joyY,
       radius: joyRadius,
       pointerId: -1,
       active: false,
       dx: 0,
-      dy: 0
+      dy: 0,
+      magnitude: 0
     };
 
-    // Action buttons (right side)
-    const btnSize = 36;
-    const btnGap = 16;
-    const btnX = camW - 70;
-    const btnY = camH - 100;
+    // ── Action Buttons (right side — diamond layout) ──
+    const btnRadius = 30;
+    const btnSpacing = 72;
+    const centerX = camW - 90;
+    const centerY = camH - 120;
+
+    const classAbilityLabel: Record<string, string> = {
+      warrior: '🛡️', rogue: '⚡', 'dark-knight': '🔥'
+    };
+    const classAbilityName: Record<string, string> = {
+      warrior: 'SHIELD', rogue: 'FLURRY', 'dark-knight': 'FLAME'
+    };
 
     const buttons = [
-      { name: 'attack', color: 0xe74c3c, label: '⚔️', x: btnX, y: btnY - btnSize - btnGap },
-      { name: 'dash',   color: 0x3498db, label: '💨', x: btnX - btnSize - btnGap, y: btnY },
-      { name: 'area',   color: 0x9b59b6, label: '💥', x: btnX + btnSize + btnGap, y: btnY },
-      { name: 'arrow',  color: 0xf1c40f, label: '🏹', x: btnX, y: btnY + btnSize + btnGap }
+      // Top: Attack (primary — largest)
+      { name: 'attack', color: 0xe74c3c, glow: 0xff6b6b, label: '⚔️', subLabel: 'ATK',
+        x: centerX, y: centerY - btnSpacing * 0.6, radius: btnRadius + 4, hold: true },
+      // Left: Dash
+      { name: 'dash', color: 0x3498db, glow: 0x60b0f4, label: '💨', subLabel: 'DASH',
+        x: centerX - btnSpacing * 0.7, y: centerY + btnSpacing * 0.15, radius: btnRadius, hold: false },
+      // Right: Area ability
+      { name: 'area', color: 0x9b59b6, glow: 0xc084fc, label: classAbilityLabel[this.playerClass] || '💥', subLabel: classAbilityName[this.playerClass] || 'AREA',
+        x: centerX + btnSpacing * 0.7, y: centerY + btnSpacing * 0.15, radius: btnRadius, hold: false },
+      // Bottom: Arrow
+      { name: 'arrow', color: 0xf59e0b, glow: 0xfbbf24, label: '🏹', subLabel: 'ARROW',
+        x: centerX, y: centerY + btnSpacing * 0.7, radius: btnRadius - 2, hold: false }
     ];
 
     buttons.forEach(btn => {
-      const circle = this.add.circle(btn.x, btn.y, btnSize, btn.color, 0.6)
+      // Shadow for depth
+      this.add.circle(btn.x + 2, btn.y + 2, btn.radius, 0x000000, 0.3)
+        .setDepth(2999).setScrollFactor(0);
+
+      // Main button circle
+      const circle = this.add.circle(btn.x, btn.y, btn.radius, btn.color, 0.65)
+        .setStrokeStyle(2.5, btn.glow, 0.5)
         .setDepth(3000).setScrollFactor(0).setInteractive();
-      const label = this.add.text(btn.x, btn.y, btn.label, {
-        fontSize: '20px'
+
+      // Emoji label
+      const label = this.add.text(btn.x, btn.y - 3, btn.label, {
+        fontSize: '22px'
+      }).setOrigin(0.5).setDepth(3002).setScrollFactor(0);
+
+      // Sub-label text
+      this.add.text(btn.x, btn.y + btn.radius + 8, btn.subLabel, {
+        fontSize: '8px', color: '#aaa', fontStyle: 'bold',
+        stroke: '#000', strokeThickness: 2
       }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
+
+      // Cooldown overlay (Graphics object per button)
+      const cooldownArc = this.add.graphics().setDepth(3003).setScrollFactor(0);
 
       this.touchButtons.set(btn.name, {
         circle,
         label,
+        cooldownArc,
         pressed: false,
+        held: false,
         pointerId: -1
       });
     });
 
-    // Touch event handlers
+    // ── Auto-Attack Toggle Button ──
+    const aaBg = this.add.circle(0, 0, 18, 0x333333, 0.5)
+      .setStrokeStyle(1.5, 0x666666, 0.4);
+    const aaLabel = this.add.text(0, 0, 'AA', {
+      fontSize: '11px', color: '#888', fontStyle: 'bold',
+      stroke: '#000', strokeThickness: 2
+    }).setOrigin(0.5);
+    this.autoAttackBtn = this.add.container(centerX, centerY - btnSpacing * 0.6 - 52, [aaBg, aaLabel])
+      .setDepth(3004).setScrollFactor(0).setSize(36, 36).setInteractive();
+    this.autoAttackBtn.on('pointerdown', () => {
+      this.autoAttackEnabled = !this.autoAttackEnabled;
+      aaBg.setFillStyle(this.autoAttackEnabled ? 0x22c55e : 0x333333, this.autoAttackEnabled ? 0.7 : 0.5);
+      aaLabel.setColor(this.autoAttackEnabled ? '#fff' : '#888');
+    });
+
+    // ── Touch Event Handlers (multi-touch aware) ──
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (!this.touchJoystick) return;
-      // Check joystick
-      const distToJoy = Phaser.Math.Distance.Between(pointer.x, pointer.y, this.touchJoystick.baseX, this.touchJoystick.baseY);
-      if (distToJoy <= joyRadius * 1.5 && !this.touchJoystick.active) {
+
+      // Check joystick area (generous hit zone — entire left half below HUD)
+      if (pointer.x < camW * 0.4 && pointer.y > 350 && !this.touchJoystick.active) {
         this.touchJoystick.active = true;
         this.touchJoystick.pointerId = pointer.id;
+        // Snap joystick base to touch if far from default position
+        const distFromBase = Phaser.Math.Distance.Between(pointer.x, pointer.y, this.touchJoystick.baseX, this.touchJoystick.baseY);
+        if (distFromBase > joyRadius * 2) {
+          const clampedX = Phaser.Math.Clamp(pointer.x, 50, camW * 0.35);
+          const clampedY = Phaser.Math.Clamp(pointer.y, camH - 200, camH - 50);
+          this.touchJoystick.baseX = clampedX;
+          this.touchJoystick.baseY = clampedY;
+          joyBase.setPosition(clampedX, clampedY);
+          joyRing.setPosition(clampedX, clampedY);
+          joyThumb.setPosition(clampedX, clampedY);
+        }
+        return;
       }
 
-      // Check buttons
-      this.touchButtons.forEach((btn) => {
+      // Check buttons (generous touch zones)
+      this.touchButtons.forEach((btn, _name) => {
         const dist = Phaser.Math.Distance.Between(pointer.x, pointer.y, btn.circle.x, btn.circle.y);
-        if (dist <= btnSize * 1.3) {
+        const hitRadius = (btn.circle as any).radius * 1.4;
+        if (dist <= hitRadius && btn.pointerId < 0) {
           btn.pressed = true;
+          btn.held = true;
           btn.pointerId = pointer.id;
+          // Visual press feedback
+          this.tweens.add({
+            targets: btn.circle,
+            scaleX: 0.85, scaleY: 0.85,
+            duration: 60, ease: 'Quad.easeOut'
+          });
           btn.circle.setAlpha(1);
+          btn.circle.setStrokeStyle(3, 0xffffff, 0.8);
         }
       });
     });
@@ -3047,6 +3174,20 @@ export class GameScene extends Phaser.Scene {
         const dy = pointer.y - this.touchJoystick.baseY;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const maxDist = joyRadius;
+
+        // Apply dead zone
+        if (dist < deadZone) {
+          this.touchJoystick.dx = 0;
+          this.touchJoystick.dy = 0;
+          this.touchJoystick.magnitude = 0;
+          joyThumb.setPosition(this.touchJoystick.baseX, this.touchJoystick.baseY);
+          return;
+        }
+
+        // Speed curve: gentle ramp from dead zone to max
+        const normalizedDist = Math.min((dist - deadZone) / (maxDist - deadZone), 1);
+        const speedCurve = normalizedDist * normalizedDist; // quadratic curve
+        this.touchJoystick.magnitude = speedCurve;
 
         if (dist > maxDist) {
           this.touchJoystick.dx = (dx / dist) * maxDist;
@@ -3070,13 +3211,34 @@ export class GameScene extends Phaser.Scene {
         this.touchJoystick.pointerId = -1;
         this.touchJoystick.dx = 0;
         this.touchJoystick.dy = 0;
+        this.touchJoystick.magnitude = 0;
         joyThumb.setPosition(this.touchJoystick.baseX, this.touchJoystick.baseY);
+        // Reset base position smoothly
+        this.tweens.add({
+          targets: [joyBase, joyRing, joyThumb],
+          x: joyX, y: joyY, duration: 200, ease: 'Quad.easeOut',
+          onUpdate: () => {
+            this.touchJoystick!.baseX = joyBase.x;
+            this.touchJoystick!.baseY = joyBase.y;
+          }
+        });
       }
 
       this.touchButtons.forEach((btn) => {
         if (btn.pointerId === pointer.id) {
+          btn.held = false;
           btn.pointerId = -1;
-          btn.circle.setAlpha(0.6);
+          // Visual release feedback
+          this.tweens.add({
+            targets: btn.circle,
+            scaleX: 1, scaleY: 1,
+            duration: 80, ease: 'Quad.easeOut'
+          });
+          btn.circle.setAlpha(0.65);
+          const btnDef = buttons.find(b => this.touchButtons.get(b.name) === btn);
+          if (btnDef) {
+            btn.circle.setStrokeStyle(2.5, btnDef.glow, 0.5);
+          }
         }
       });
     });
@@ -3089,6 +3251,45 @@ export class GameScene extends Phaser.Scene {
       return true;
     }
     return false;
+  }
+
+  private isTouchBtnHeld(name: string): boolean {
+    const btn = this.touchButtons.get(name);
+    return btn ? btn.held : false;
+  }
+
+  private updateMobileCooldowns() {
+    if (!this.isMobile) return;
+    const classStats = CLASS_STATS[this.playerClass];
+    
+    // Update cooldown arcs on buttons
+    const cooldownMap: Record<string, { current: number; max: number }> = {
+      'attack': { current: this.attackCooldown, max: classStats.attackRate },
+      'dash': { current: this.dashCooldown, max: classStats.dashCooldown },
+      'area': { current: this.areaCooldown, max: classStats.areaCooldown },
+      'arrow': { current: this.attackCooldown, max: classStats.attackRate * 0.8 }
+    };
+
+    this.touchButtons.forEach((btn, name) => {
+      if (!btn.cooldownArc) return;
+      btn.cooldownArc.clear();
+      const cd = cooldownMap[name];
+      if (cd && cd.current > 0) {
+        const pct = Math.min(cd.current / cd.max, 1);
+        const cx = btn.circle.x;
+        const cy = btn.circle.y;
+        const r = (btn.circle as any).radius || 30;
+        // Gray overlay
+        btn.cooldownArc.fillStyle(0x000000, 0.5);
+        btn.cooldownArc.slice(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct, true);
+        btn.cooldownArc.fillPath();
+        btn.cooldownArc.closePath();
+        // Dim the button
+        btn.circle.setAlpha(0.35);
+      } else {
+        if (btn.pointerId < 0) btn.circle.setAlpha(0.65);
+      }
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
